@@ -1,11 +1,9 @@
-<html lang="fr"><head>
+<!DOCTYPE html>
+<html lang="fr">
+<head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
   <title>MarketHub - Gestion B2B</title>
-  <!-- PWA manifest & theme -->
-  <link rel="manifest" href="/manifest.json">
-  <meta name="theme-color" content="#0f172a">
-  <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
@@ -17,22 +15,12 @@
       }
     }
   </script>
-  <!-- Firebase -->
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
-  <!-- SheetJS -->
   <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
-  <!-- React, ReactDOM, Babel -->
   <script src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.development.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.development.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@babel/standalone/babel.min.js"></script>
-
-<link rel="manifest" href="./manifest.json">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="theme-color" content="#4b6cb7">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<link rel="apple-touch-icon" href="icon.png">
 </head>
 <body class="bg-slate-900">
   <div id="root"></div>
@@ -52,7 +40,7 @@
       }
     }
 
-    // Nettoyage des marques
+    // Nettoyage des marques (supprime les entrées invalides)
     const cleanBrands = (brandsArray) => {
       if (!Array.isArray(brandsArray)) return [];
       return brandsArray.filter(b => 
@@ -66,7 +54,7 @@
       }));
     };
 
-    // Nettoyage des commandes
+    // Nettoyage des commandes : garantit que items est un tableau et que chaque item a les bonnes propriétés
     const cleanOrders = (ordersArray) => {
       if (!Array.isArray(ordersArray)) return [];
       return ordersArray.filter(o => o && typeof o === 'object').map(o => {
@@ -106,6 +94,7 @@
       const [pinCode, setPinCode] = useState('');
       const [showPrices, setShowPrices] = useState(true);
       
+      // Initialisation avec nettoyage
       const [brands, setBrands] = useState(() => {
         const saved = localStorage.getItem('marketHubBrands');
         const parsed = saved ? JSON.parse(saved) : [];
@@ -237,15 +226,6 @@
       useEffect(() => { localStorage.setItem('marketHubCart', JSON.stringify(cart)); }, [cart]);
       useEffect(() => { localStorage.setItem('marketHubBrands', JSON.stringify(brands)); }, [brands]);
       useEffect(() => { localStorage.setItem('marketHubOrders', JSON.stringify(orders)); }, [orders]);
-      
-      // Service Worker (PWA)
-      useEffect(() => {
-        if ('serviceWorker' in navigator) {
-          navigator.serviceWorker.register('/service-worker.js')
-            .then(reg => addLog('log', 'Service Worker enregistré'))
-            .catch(err => addLog('error', 'Service Worker échec: ' + err.message));
-        }
-      }, [addLog]);
       
       const notify = (msg) => { setNotification(msg); setTimeout(() => setNotification(null), 2000); };
       
@@ -513,7 +493,7 @@
               </div>
             )}
             
-            {/* Modale PIN */}
+            {/* Modale PIN (identique) */}
             {showPinModal && (
               <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center p-4 z-50">
                 <div className="bg-slate-800 w-full max-w-[320px] rounded-2xl shadow-2xl p-6 border border-slate-700">
@@ -531,7 +511,7 @@
               </div>
             )}
             
-            {/* Bouton panier */}
+            {/* Bouton panier (client) */}
             {!isAdmin && (
               <div className="fixed bottom-0 left-0 right-0 flex justify-center pointer-events-none z-40">
                 <div className="w-full max-w-[360px] px-4 pb-4 pointer-events-auto">
@@ -566,7 +546,7 @@
               </div>
             )}
             
-            {/* Modale panier */}
+            {/* Modale panier (client) */}
             {showCartModal && !isAdmin && (
               <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
                 <div className="bg-slate-800 w-full max-w-[340px] rounded-2xl shadow-2xl max-h-[80vh] flex flex-col border border-slate-700">
@@ -598,7 +578,7 @@
               </div>
             )}
             
-            {/* Modale livraison */}
+            {/* Modale livraison (client) */}
             {showDeliveryModal && !isAdmin && (
               <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
                 <div className="bg-slate-800 w-full max-w-[340px] rounded-2xl shadow-2xl p-6 border border-slate-700">
@@ -614,7 +594,7 @@
               </div>
             )}
             
-            {/* Modale commandes admin */}
+            {/* Modale commandes admin – sécurisée avec nettoyage à l’affichage */}
             {showOrdersModal && isAdmin && (
               <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
                 <div className="bg-slate-800 w-full max-w-[340px] rounded-2xl shadow-2xl max-h-[85vh] flex flex-col border border-slate-700">
@@ -626,6 +606,7 @@
                   </div>
                   <div className="flex-1 overflow-y-auto p-3">
                     {ordersActiveTab==="new" && (newOrders.length===0?<p className="text-center text-slate-400 py-4">Aucune nouvelle commande</p>:newOrders.map(order=>{
+                      // Sécurisation des items de la commande
                       const safeItems = Array.isArray(order.items) ? order.items : [];
                       return (
                         <div key={order.id} className="mb-4 p-3 bg-slate-700/50 rounded-xl border border-slate-600">
@@ -702,7 +683,7 @@
               </div>
             )}
             
-            {/* Modale données */}
+            {/* Modale données (import/export) */}
             {showDataModal && isAdmin && (
               <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
                 <div className="bg-slate-800 w-full max-w-[340px] rounded-2xl p-6 shadow-2xl border border-slate-700">
@@ -735,7 +716,7 @@
               </div>
             )}
             
-            {/* Modales admin */}
+            {/* Modales admin (ajout / gestion / édition) */}
             {(showModal || showProductModal || showBrandSelect || showManageModal || editingBrand) && (
               <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
                 <div className="bg-slate-800 w-full p-6 rounded-[28px] border border-slate-700 shadow-2xl max-h-[80vh] overflow-y-auto">
@@ -834,15 +815,5 @@
     const root = ReactDOM.createRoot(document.getElementById('root'));
     root.render(React.createElement(ErrorBoundary, null, React.createElement(App, null)));
   </script>
-
-
-<script>
-  if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js')
-        .then(reg => console.log('Service Worker enregistré !'))
-        .catch(err => console.error('Erreur SW :', err));
-    });
-  }
-</script>
-</body></html>
+</body>
+</html>
