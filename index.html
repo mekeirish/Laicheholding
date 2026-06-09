@@ -53,7 +53,7 @@
       }
     }
 
-    // Fonction utilitaire de traitement d'image : redimension à 800px, WebP qualité 0.8
+    // Traitement d'image : redimension WebP 800px
     const processImage = (file) => {
       return new Promise((resolve, reject) => {
         if (!file.type.startsWith('image/')) {
@@ -93,8 +93,11 @@
       });
     };
 
-    // Upload d'une image traitée vers Firebase Storage
+    // Upload vers Firebase Storage
     const uploadImageAndGetUrl = async (file, pathPrefix = 'products') => {
+      if (!window.firebase || !window.firebase.storage) {
+        throw new Error('Firebase Storage non disponible');
+      }
       try {
         const processedBlob = await processImage(file);
         const fileName = `${pathPrefix}_${Date.now()}_${Math.random().toString(36).substr(2, 8)}.webp`;
@@ -236,6 +239,7 @@
         };
       }, [addLog]);
       
+      // Firebase init
       useEffect(() => {
         let mounted = true;
         const initFirebase = () => {
@@ -264,6 +268,7 @@
         return () => { mounted = false; };
       }, [addLog]);
       
+      // Chargement initial depuis Firebase
       useEffect(() => {
         if (!firebaseReady || !window.firebase || initialLoadDone.current) return;
         const db = window.firebase.database();
@@ -294,6 +299,7 @@
         });
       }, [firebaseReady]);
       
+      // Sauvegarde différée
       useEffect(() => {
         if (!firebaseReady || !initialLoadDone.current) return;
         if (brandsTimeoutRef.current) clearTimeout(brandsTimeoutRef.current);
@@ -315,6 +321,7 @@
       
       const notify = (msg) => { setNotification(msg); setTimeout(() => setNotification(null), 2000); };
       
+      // ========== GESTION MANUELLE DES IMAGES (marques, produits) ==========
       const addBrand = async () => {
         if (newBrand.name && newBrand.name.trim()) {
           let imageUrl = null;
@@ -420,36 +427,38 @@
         notify("Produit supprimé"); 
       };
       
-      // Traitement par lot d'images (association par nom de fichier)
+      // ========== TRAITEMENT PAR LOT (images) ==========
       const handleBatchImageUpload = async (files) => {
         if (!files || files.length === 0) return;
+        if (!window.firebase || !window.firebase.storage) {
+          notify("Firebase Storage n'est pas encore prêt. Veuillez réessayer.");
+          return;
+        }
         setIsBatchUploading(true);
         let successCount = 0;
         let errorCount = 0;
         
-        // Parcourir chaque fichier
+        let updatedBrands = [...brands]; // copie locale
+        
         for (const file of files) {
           try {
             const fileName = file.name;
             const baseName = fileName.replace(/\.[^/.]+$/, ''); // sans extension
             let matched = false;
             
-            // 1. Recherche d'une marque exacte (insensible à la casse)
-            const brandMatch = brands.find(b => b.name.toLowerCase() === baseName.toLowerCase());
+            // 1. Correspondance exacte avec une marque
+            const brandMatch = updatedBrands.find(b => b.name.toLowerCase() === baseName.toLowerCase());
             if (brandMatch) {
-              // Upload comme image de marque
               const url = await uploadImageAndGetUrl(file, 'brands');
-              setBrands(prev => prev.map(b => 
-                b.id === brandMatch.id ? { ...b, image: url } : b
-              ));
+              const idx = updatedBrands.findIndex(b => b.id === brandMatch.id);
+              if (idx !== -1) updatedBrands[idx] = { ...updatedBrands[idx], image: url };
               notify(`✅ Image de la marque "${brandMatch.name}" mise à jour`);
               successCount++;
               matched = true;
               continue;
             }
             
-            // 2. Recherche d'un produit : format "Marque_Produit" (ou "Marque-Produit", "Marque Produit"?)
-            // On teste les séparateurs courants : '_', '-', ' '
+            // 2. Correspondance produit : format "Marque_Separateur_Produit"
             let separator = null;
             let candidateBrand = null;
             let candidateProduct = null;
@@ -459,8 +468,8 @@
                 const parts = baseName.split(sep);
                 if (parts.length >= 2) {
                   const brandNameCandidate = parts[0];
-                  const productNameCandidate = parts.slice(1).join(sep); // on garde le reste
-                  const brand = brands.find(b => b.name.toLowerCase() === brandNameCandidate.toLowerCase());
+                  const productNameCandidate = parts.slice(1).join(sep);
+                  const brand = updatedBrands.find(b => b.name.toLowerCase() === brandNameCandidate.toLowerCase());
                   if (brand) {
                     const product = brand.products.find(p => p.name.toLowerCase() === productNameCandidate.toLowerCase());
                     if (product) {
@@ -475,16 +484,14 @@
             }
             
             if (candidateBrand && candidateProduct) {
-              // Upload comme image de produit
               const url = await uploadImageAndGetUrl(file, 'products');
-              setBrands(prev => prev.map(b => 
-                b.id === candidateBrand.id ? {
-                  ...b,
-                  products: b.products.map(p => 
-                    p.id === candidateProduct.id ? { ...p, image: url } : p
-                  )
-                } : b
-              ));
+              const brandIdx = updatedBrands.findIndex(b => b.id === candidateBrand.id);
+              if (brandIdx !== -1) {
+                const productIdx = updatedBrands[brandIdx].products.findIndex(p => p.id === candidateProduct.id);
+                if (productIdx !== -1) {
+                  updatedBrands[brandIdx].products[productIdx] = { ...candidateProduct, image: url };
+                }
+              }
               notify(`✅ Image du produit "${candidateProduct.name}" (${candidateBrand.name}) mise à jour`);
               successCount++;
               matched = true;
@@ -503,10 +510,14 @@
           }
         }
         
+        if (successCount > 0) {
+          setBrands(updatedBrands);
+        }
         setIsBatchUploading(false);
         notify(`Traitement terminé : ${successCount} réussis, ${errorCount} échecs.`);
       };
       
+      // ========== EXPORT / IMPORT EXCEL ==========
       const exportToExcel = () => {
         if(!window.XLSX){ notify("Excel non chargé"); return; }
         try {
@@ -583,6 +594,7 @@
       };
       const cancelPreview = () => { setPreviewData(null); notify("Import annulé"); };
       
+      // ========== NAVIGATION & AUTH ==========
       const openBrand = (brand) => {
         if (!brand || !brand.products || !Array.isArray(brand.products)) {
           notify("Marque invalide");
@@ -597,6 +609,7 @@
       const handlePinDelete = () => { setPinCode(p => p.slice(0,-1)); };
       useEffect(() => { if(pinCode.length===6) { if(pinCode==="000000") { setIsAdmin(true); setShowPinModal(false); setPinCode(''); goHome(); notify("Connexion admin"); } else { notify("Code incorrect"); setPinCode(''); } } }, [pinCode]);
       
+      // ========== PANIER & COMMANDES ==========
       const openProductModal = (prod) => { setSelectedProduct(prod); setProductQuantity(1); setShowCartModal(false); };
       const addToCart = () => {
         if(!selectedProduct) return;
@@ -627,6 +640,7 @@
       const cancelConfirm = () => setConfirmAction(null);
       const executeConfirm = () => { if(confirmAction?.callback) confirmAction.callback(); setConfirmAction(null); };
       
+      // ========== COMMANDES LIVRÉES (export CSV, nettoyage) ==========
       const exportDeliveredHistory = () => {
         if (deliveredOrders.length === 0) {
           notify("Aucune commande livrée à exporter");
@@ -695,6 +709,7 @@
         }
       };
       
+      // ========== COMPOSANTS UTILITAIRES ==========
       const DebugConsole = () => {
         const copyLogs = async () => {
           const text = logs.map(l => `[${l.timestamp}] ${l.type.toUpperCase()}: ${l.message}`).join('\n');
@@ -723,16 +738,17 @@
         );
       };
       
-      if (isLoading) return <div className="fixed inset-0 bg-slate-900 flex items-center justify-center"><div className="text-slate-200 text-lg">Chargement...</div></div>;
-      
-      const safeBrands = Array.isArray(brands) ? brands : [];
-      const safeSelectedBrand = selectedBrand && selectedBrand.products && Array.isArray(selectedBrand.products) ? selectedBrand : null;
-      
       const FileInput = ({ onFileSelect, label }) => React.createElement('div', { className: 'mb-4' },
         React.createElement('label', { className: 'block text-[9px] uppercase font-bold text-slate-400 tracking-wider mb-1' }, label),
         React.createElement('input', { type: 'file', accept: 'image/*', onChange: (e) => onFileSelect(e.target.files[0]), className: 'w-full text-sm text-slate-400 file:mr-2 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-sm file:bg-slate-700 file:text-slate-200 hover:file:bg-slate-600' })
       );
       
+      if (isLoading) return <div className="fixed inset-0 bg-slate-900 flex items-center justify-center"><div className="text-slate-200 text-lg">Chargement...</div></div>;
+      
+      const safeBrands = Array.isArray(brands) ? brands : [];
+      const safeSelectedBrand = selectedBrand && selectedBrand.products && Array.isArray(selectedBrand.products) ? selectedBrand : null;
+      
+      // ========== RENDU PRINCIPAL ==========
       return (
         <div className="fixed inset-0 bg-slate-900 flex justify-center font-sans">
           {notification && <div className="fixed top-6 z-[100] bg-slate-800 text-slate-100 px-6 py-3 rounded-full text-xs font-bold shadow-2xl animate-fade-in-down border border-indigo-500/30">{notification}</div>}
