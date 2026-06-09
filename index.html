@@ -180,6 +180,11 @@
       const [pinCode, setPinCode] = useState('');
       const [showPrices, setShowPrices] = useState(true);
       
+      // Nouvel état pour la modale "Lot de produits"
+      const [showBatchModal, setShowBatchModal] = useState(false);
+      const [selectedBrandForBatch, setSelectedBrandForBatch] = useState(null);
+      const [isUploadingBatch, setIsUploadingBatch] = useState(false);
+      
       const [brands, setBrands] = useState(() => {
         const saved = localStorage.getItem('marketHubBrands');
         const parsed = saved ? JSON.parse(saved) : [];
@@ -208,8 +213,6 @@
       const logsEndRef = useRef(null);
       const [previewData, setPreviewData] = useState(null);
       const [isImporting, setIsImporting] = useState(false);
-      const [isBatchUploading, setIsBatchUploading] = useState(false);
-      const [selectedBrandForProductImport, setSelectedBrandForProductImport] = useState(null);
       const firebaseInitialized = useRef(false);
       const [firebaseReady, setFirebaseReady] = useState(false);
       const initialLoadDone = useRef(false);
@@ -431,90 +434,28 @@
         notify("Produit supprimé"); 
       };
       
-      // ========== TRAITEMENT PAR LOT POUR MARQUES ==========
-      const handleBatchBrandImages = async (files) => {
+      // ========== TRAITEMENT PAR LOT UNIQUEMENT POUR PRODUITS ==========
+      const handleBatchProductUpload = async (files) => {
         if (!files || files.length === 0) return;
-        if (!firebaseReady || !window.firebase || !window.firebase.storage) {
-          notify("Firebase Storage n'est pas encore prêt. Veuillez réessayer.");
-          return;
-        }
-        setIsBatchUploading(true);
-        let successCount = 0;
-        let errorCount = 0;
-        let createdCount = 0;
-        let updatedCount = 0;
-        
-        let updatedBrands = [...brands];
-        
-        for (const file of files) {
-          try {
-            const baseName = file.name.replace(/\.[^/.]+$/, '').trim();
-            if (!baseName) {
-              notify(`❌ Nom de fichier invalide: ${file.name}`);
-              errorCount++;
-              continue;
-            }
-            // Vérifier si une marque avec ce nom existe déjà (comparaison normalisée)
-            const existingBrand = updatedBrands.find(b => normalizeString(b.name) === normalizeString(baseName));
-            const url = await uploadImageAndGetUrl(file, 'brands');
-            
-            if (existingBrand) {
-              // Mise à jour de l'image existante
-              const idx = updatedBrands.findIndex(b => b.id === existingBrand.id);
-              if (idx !== -1) {
-                updatedBrands[idx] = { ...existingBrand, image: url };
-                updatedCount++;
-                notify(`✅ Marque "${existingBrand.name}" mise à jour`);
-              }
-            } else {
-              // Création d'une nouvelle marque
-              const newBrandObj = {
-                id: Date.now() + Math.random(),
-                name: baseName,
-                image: url,
-                products: []
-              };
-              updatedBrands.push(newBrandObj);
-              createdCount++;
-              notify(`✅ Nouvelle marque "${baseName}" créée`);
-            }
-            successCount++;
-          } catch (err) {
-            addLog('error', `Erreur lors du traitement de ${file.name}: ${err.message}`);
-            notify(`❌ Erreur pour "${file.name}" : ${err.message}`);
-            errorCount++;
-          }
-        }
-        
-        if (successCount > 0) {
-          setBrands(updatedBrands);
-        }
-        setIsBatchUploading(false);
-        notify(`Traitement marques terminé : ${createdCount} créées, ${updatedCount} mises à jour, ${errorCount} échecs.`);
-      };
-      
-      // ========== TRAITEMENT PAR LOT POUR PRODUITS ==========
-      const handleBatchProductImages = async (files) => {
-        if (!files || files.length === 0) return;
-        if (!selectedBrandForProductImport) {
-          notify("Veuillez sélectionner une marque cible pour les produits.");
+        if (!selectedBrandForBatch) {
+          notify("Veuillez sélectionner une marque cible.");
           return;
         }
         if (!firebaseReady || !window.firebase || !window.firebase.storage) {
           notify("Firebase Storage n'est pas encore prêt. Veuillez réessayer.");
           return;
         }
-        setIsBatchUploading(true);
+        setIsUploadingBatch(true);
         let successCount = 0;
         let errorCount = 0;
         let createdCount = 0;
         let updatedCount = 0;
         
         let updatedBrands = [...brands];
-        const brandIndex = updatedBrands.findIndex(b => b.id === selectedBrandForProductImport);
+        const brandIndex = updatedBrands.findIndex(b => b.id === selectedBrandForBatch);
         if (brandIndex === -1) {
           notify("La marque sélectionnée n'existe plus.");
-          setIsBatchUploading(false);
+          setIsUploadingBatch(false);
           return;
         }
         
@@ -540,7 +481,7 @@
                 notify(`✅ Produit "${existingProduct.name}" mis à jour dans "${updatedBrands[brandIndex].name}"`);
               }
             } else {
-              // Création d'un nouveau produit
+              // Création d'un nouveau produit (qty et prix à 0 par défaut)
               const newProductObj = {
                 id: Date.now() + Math.random(),
                 name: baseName,
@@ -566,7 +507,8 @@
         if (successCount > 0) {
           setBrands(updatedBrands);
         }
-        setIsBatchUploading(false);
+        setIsUploadingBatch(false);
+        setShowBatchModal(false);
         notify(`Traitement produits terminé : ${createdCount} créés, ${updatedCount} mis à jour, ${errorCount} échecs.`);
       };
       
@@ -1054,26 +996,13 @@
                         Choisir un fichier Excel à importer
                         <input type="file" className="hidden" accept=".xlsx,.xls,.csv" onChange={(e)=>{ if(e.target.files[0]) analyzeImportFile(e.target.files[0]); e.target.value=''; }} />
                       </label>
-                      <div className="flex flex-col gap-2">
-                        <select 
-                          value={selectedBrandForProductImport || ""} 
-                          onChange={(e) => setSelectedBrandForProductImport(e.target.value ? parseInt(e.target.value) : null)}
-                          className="w-full p-2 bg-slate-900 rounded-lg border border-slate-700 text-slate-200 text-sm"
-                        >
-                          <option value="">-- Sélectionner une marque pour les produits --</option>
-                          {safeBrands.map(b => (
-                            <option key={b.id} value={b.id}>{b.name}</option>
-                          ))}
-                        </select>
-                        <label className={`w-full py-3 text-center rounded-xl font-bold transition-all active:scale-95 ${isBatchUploading ? 'bg-gray-500 cursor-not-allowed' : 'bg-green-600 text-white cursor-pointer hover:bg-green-500'}`}>
-                          {isBatchUploading ? 'Traitement en cours...' : 'Images marques (lot)'}
-                          <input type="file" className="hidden" accept="image/*" multiple disabled={isBatchUploading} onChange={(e)=>{ if(e.target.files.length) handleBatchBrandImages(Array.from(e.target.files)); e.target.value=''; }} />
-                        </label>
-                        <label className={`w-full py-3 text-center rounded-xl font-bold transition-all active:scale-95 ${isBatchUploading || !selectedBrandForProductImport ? 'bg-gray-500 cursor-not-allowed' : 'bg-blue-600 text-white cursor-pointer hover:bg-blue-500'}`}>
-                          {isBatchUploading ? 'Traitement en cours...' : 'Images produits (lot)'}
-                          <input type="file" className="hidden" accept="image/*" multiple disabled={isBatchUploading || !selectedBrandForProductImport} onChange={(e)=>{ if(e.target.files.length) handleBatchProductImages(Array.from(e.target.files)); e.target.value=''; }} />
-                        </label>
-                      </div>
+                      <button 
+                        onClick={() => setShowBatchModal(true)} 
+                        className={`w-full py-3 text-center rounded-xl font-bold transition-all active:scale-95 ${isUploadingBatch ? 'bg-gray-500 cursor-not-allowed' : 'bg-green-600 text-white hover:bg-green-500'}`}
+                        disabled={isUploadingBatch}
+                      >
+                        {isUploadingBatch ? 'Chargement en cours...' : '📦 Lot de produits'}
+                      </button>
                     </div>
                   ) : (
                     <div className="mt-2">
@@ -1091,9 +1020,46 @@
                     </div>
                   )}
                   <p className="text-[10px] text-slate-400 mt-4 text-center">
-                    Images marques : une image = une marque (créée ou mise à jour) d'après son nom.<br/>
-                    Images produits : sélectionnez d'abord une marque, les images deviennent des produits dans cette marque.
+                    Lot de produits : sélectionnez une marque, puis chargez plusieurs images.
                   </p>
+                </div>
+              </div>
+            )}
+            
+            {/* MODALE POUR LE LOT DE PRODUITS */}
+            {showBatchModal && (
+              <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+                <div className="bg-slate-800 w-full max-w-[340px] rounded-2xl p-6 shadow-2xl border border-slate-700">
+                  <div className="flex justify-between items-center mb-4">
+                    <h2 className="text-lg font-bold text-slate-100">Import de produits par lot</h2>
+                    <button onClick={() => setShowBatchModal(false)} className="text-slate-400 text-2xl hover:text-slate-200">&times;</button>
+                  </div>
+                  <label className="text-[10px] uppercase font-bold text-slate-400">Choisir la marque cible</label>
+                  <select 
+                    value={selectedBrandForBatch || ""} 
+                    onChange={(e) => setSelectedBrandForBatch(e.target.value ? parseInt(e.target.value) : null)}
+                    className="w-full p-2 mb-4 bg-slate-900 rounded-lg border border-slate-700 text-slate-200 text-sm"
+                  >
+                    <option value="">-- Sélectionner une marque --</option>
+                    {safeBrands.map(b => (
+                      <option key={b.id} value={b.id}>{b.name}</option>
+                    ))}
+                  </select>
+                  <label className={`w-full py-3 text-center rounded-xl font-bold transition-all active:scale-95 ${!selectedBrandForBatch ? 'bg-gray-500 cursor-not-allowed' : 'bg-blue-600 text-white cursor-pointer hover:bg-blue-500'}`}>
+                    Choisir les images (produits)
+                    <input 
+                      type="file" 
+                      className="hidden" 
+                      accept="image/*" 
+                      multiple 
+                      disabled={!selectedBrandForBatch} 
+                      onChange={(e) => {
+                        if (e.target.files.length) handleBatchProductUpload(Array.from(e.target.files));
+                        e.target.value = '';
+                      }} 
+                    />
+                  </label>
+                  <button onClick={() => setShowBatchModal(false)} className="w-full mt-4 py-2 bg-slate-700 rounded-xl font-medium text-slate-200 hover:bg-slate-600">Annuler</button>
                 </div>
               </div>
             )}
