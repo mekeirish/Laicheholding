@@ -17,6 +17,62 @@
       }
     }
   </script>
+  <style>
+    /* Mobile uniquement : barre de navigation en bas */
+    @media (max-width: 1023px) {
+      .mobile-bottom-nav {
+        display: flex;
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        height: 64px;
+        background-color: #1e293b;
+        border-top: 1px solid #334155;
+        box-shadow: 0 -4px 6px -1px rgba(0, 0, 0, 0.1);
+        z-index: 50;
+        align-items: center;
+        justify-content: center;
+      }
+      .mobile-bottom-nav .cart-button {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 48px;
+        height: 48px;
+        background-color: #4f46e5;
+        border-radius: 12px;
+        color: white;
+        font-weight: bold;
+        font-size: 24px;
+        transition: transform 0.1s ease;
+      }
+      .mobile-bottom-nav .cart-button:active {
+        transform: scale(0.95);
+      }
+      /* Suppression du panier flottant d'origine sur mobile */
+      .mobile-floating-cart {
+        display: none !important;
+      }
+      /* Ajustement du padding pour le contenu principal */
+      .main-content-padding {
+        padding-bottom: 80px !important;
+      }
+      /* Pour les modales pleine largeur, on ajuste aussi le padding si nécessaire */
+      .modal-content-scroll {
+        padding-bottom: 80px;
+      }
+    }
+    /* Desktop : barre cachée, padding réinitialisé */
+    @media (min-width: 1024px) {
+      .mobile-bottom-nav {
+        display: none !important;
+      }
+      .main-content-padding {
+        padding-bottom: 0 !important;
+      }
+    }
+  </style>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
   <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
@@ -754,14 +810,15 @@
       const safeBrands = Array.isArray(brands) ? brands : [];
       const safeSelectedBrand = selectedBrand && selectedBrand.products && Array.isArray(selectedBrand.products) ? selectedBrand : null;
       
-      // ========== RENDU PRINCIPAL AVEC LAYOUT DESKTOP ==========
+      // ========== RENDU PRINCIPAL ==========
       return (
         <div className="fixed inset-0 bg-slate-900 flex justify-center font-sans">
           {notification && <div className="fixed top-6 z-[100] bg-slate-800 text-slate-100 px-6 py-3 rounded-full text-xs font-bold shadow-2xl animate-fade-in-down border border-indigo-500/30">{notification}</div>}
           
-          <div className={`w-full h-full overflow-y-auto p-4 lg:p-6 transition-opacity duration-300 ${isTransitioning ? 'opacity-0' : 'opacity-100'}`}>
+          {/* Conteneur principal avec padding mobile compensatoire */}
+          <div className={`w-full h-full overflow-y-auto p-4 lg:p-6 main-content-padding transition-opacity duration-300 ${isTransitioning ? 'opacity-0' : 'opacity-100'}`}>
             
-            {/* Header avec bouton retour positionné correctement */}
+            {/* Header (inchangé) */}
             <div className="flex justify-between items-center mb-8 mt-2 relative lg:z-20">
               <button onClick={goHome} className="text-slate-400 text-[11px] font-medium tracking-tight hover:text-slate-200 z-10">
                 {currentView === 'home' ? 'LD Holding' : '← Retour'}
@@ -777,10 +834,10 @@
               </div>
             </div>
             
-            {/* Vue Client avec sidebar panier à gauche (desktop uniquement) */}
+            {/* Vue Client (inchangée dans le contenu, seule la barre de navigation mobile change l'emplacement du panier) */}
             {!isAdmin && currentView === 'home' && (
               <div className="lg:flex lg:gap-6">
-                {/* Sidebar panier fixe à gauche */}
+                {/* Sidebar panier fixe à gauche (desktop uniquement) - inchangée */}
                 <div className="hidden lg:block lg:fixed lg:left-0 lg:top-0 lg:h-full lg:w-96 lg:min-w-[350px] lg:max-w-xl lg:bg-slate-800 lg:border-r lg:border-slate-700 lg:shadow-xl lg:p-6 lg:overflow-y-auto lg:z-30 lg:mt-16">
                   <h2 className="text-xl font-bold text-slate-100 mb-4">Mon panier</h2>
                   {cart.length === 0 ? (
@@ -814,7 +871,6 @@
                     </div>
                   )}
                 </div>
-                {/* Contenu principal - décalé à droite pour laisser place à la sidebar */}
                 <div className="flex-1 lg:ml-96">
                   <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-4 lg:gap-6">
                     {safeBrands.map(brand => (
@@ -830,10 +886,11 @@
               </div>
             )}
             
-            {/* Vue des produits d'une marque (client) - même principe avec sidebar */}
+            {/* Vue des produits d'une marque (client) - inchangée */}
             {!isAdmin && currentView !== 'home' && (
               <div className="lg:flex lg:gap-6">
                 <div className="hidden lg:block lg:fixed lg:left-0 lg:top-0 lg:h-full lg:w-96 lg:min-w-[350px] lg:max-w-xl lg:bg-slate-800 lg:border-r lg:border-slate-700 lg:shadow-xl lg:p-6 lg:overflow-y-auto lg:z-30 lg:mt-16">
+                  {/* Même sidebar panier que ci-dessus, répété pour rester cohérent */}
                   <h2 className="text-xl font-bold text-slate-100 mb-4">Mon panier</h2>
                   {cart.length === 0 ? (
                     <p className="text-center text-slate-400 py-8">Votre panier est vide</p>
@@ -882,10 +939,9 @@
               </div>
             )}
             
-            {/* Vue Admin : Dashboard avec sidebar (lg uniquement) - avec IMGbank en bas */}
+            {/* Vue Admin : Dashboard avec sidebar (lg uniquement) - inchangé */}
             {isAdmin && currentView === 'home' && (
               <div className="lg:flex lg:gap-6">
-                {/* Sidebar admin (navigation) */}
                 <div className="hidden lg:block lg:w-72 lg:flex-shrink-0 lg:bg-slate-800 lg:rounded-xl lg:border lg:border-slate-700 lg:shadow-lg lg:p-4 lg:h-[calc(100vh-120px)] lg:overflow-y-auto lg:flex lg:flex-col lg:justify-between">
                   <div>
                     <h2 className="text-lg font-bold text-slate-100 mb-4">Administration</h2>
@@ -897,12 +953,10 @@
                       <button onClick={() => setShowOrdersModal(true)} className="w-full text-left py-2 px-3 rounded-lg bg-slate-700 hover:bg-slate-600 transition-colors text-slate-200">📋 Commandes</button>
                     </div>
                   </div>
-                  {/* Bouton IMGbank déplacé en bas, discret */}
                   <button onClick={() => setShowImgbbModal(true)} className="mt-6 w-full text-left py-2 px-3 rounded-lg bg-slate-700 hover:bg-slate-600 transition-colors text-slate-200 lg:opacity-50 lg:hover:opacity-100 lg:text-xs">
                     🖼️ IMGbank
                   </button>
                 </div>
-                {/* Contenu admin principal (grille des boutons) */}
                 <div className="flex-1">
                   <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 lg:gap-4">
                     <button onClick={() => setShowModal(true)} className="min-h-[48px] flex flex-col items-center justify-center gap-1 p-3 bg-slate-800 border border-slate-700 rounded-xl shadow-sm hover:shadow-lg hover:shadow-indigo-500/10 transition-all duration-200 active:scale-95 text-slate-100 font-medium"><span className="text-xl">🏷️</span><span className="text-sm">Ajouter une marque</span></button>
@@ -916,7 +970,7 @@
               </div>
             )}
             
-            {/* MODALES (inchangées sauf pour desktop) */}
+            {/* MODALES (inchangées, certaines avec scroll) */}
             {showPinModal && (
               <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center p-4 z-50">
                 <div className="bg-slate-800 w-full max-w-[320px] rounded-2xl shadow-2xl p-6 border border-slate-700">
@@ -934,19 +988,7 @@
               </div>
             )}
             
-            {/* Bouton panier flottant (masqué sur desktop) */}
-            {!isAdmin && (
-              <div className="fixed bottom-0 left-0 right-0 flex justify-center pointer-events-none z-40 lg:hidden">
-                <div className="w-full max-w-[360px] px-4 pb-4 pointer-events-auto">
-                  <div className="relative inline-block">
-                    <button onClick={() => setShowCartModal(true)} className="w-12 h-12 bg-indigo-600 rounded-xl shadow-xl flex items-center justify-center active:scale-95 hover:bg-indigo-500"><span className="text-white text-xl font-bold">🛒</span></button>
-                    {cart.length > 0 && <span className="absolute -top-2 -right-2 bg-emerald-600 text-white text-[10px] font-bold rounded-full w-5 h-5 flex items-center justify-center shadow-md">{cart.reduce((s,i)=>s+i.quantity,0)}</span>}
-                  </div>
-                </div>
-              </div>
-            )}
-            
-            {/* Modale panier (mobile uniquement) - inchangée */}
+            {/* Modale panier (mobile uniquement) - conservée pour compatibilité mais le bouton flottant est remplacé */}
             {showCartModal && !isAdmin && (
               <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
                 <div className="bg-slate-800 w-full max-w-[340px] rounded-2xl shadow-2xl max-h-[80vh] flex flex-col border border-slate-700">
@@ -978,7 +1020,7 @@
               </div>
             )}
             
-            {/* Modale produit, livraison, commandes, données, batch, imgbb - avec ajustements desktop */}
+            {/* Modale produit, livraison, commandes, données, batch, imgbb - inchangées */}
             {selectedProduct && !isAdmin && (
               <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 z-50">
                 <div className="bg-slate-800 w-full max-w-[320px] lg:max-w-2xl lg:mx-auto rounded-3xl overflow-hidden shadow-2xl border border-slate-700">
@@ -1018,7 +1060,6 @@
               </div>
             )}
             
-            {/* MODALE COMMANDES ADMIN - agrandie sur desktop avec police plus grande */}
             {showOrdersModal && isAdmin && (
               <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
                 <div className="bg-slate-800 w-full max-w-[340px] lg:max-w-4xl lg:mx-auto lg:p-8 rounded-2xl shadow-2xl max-h-[85vh] flex flex-col border border-slate-700">
@@ -1029,6 +1070,7 @@
                     <button onClick={() => setOrdersActiveTab("delivered")} className={`flex-1 py-3 text-xs font-medium lg:text-base ${ordersActiveTab==="delivered"?"text-indigo-400 border-b-2 border-indigo-400":"text-slate-400"}`}>Livrées ({deliveredOrders.length})</button>
                   </div>
                   <div className="flex-1 overflow-y-auto p-3 lg:p-6">
+                    {/* Contenu identique aux versions précédentes */}
                     {ordersActiveTab === "new" && (newOrders.length===0?<p className="text-center text-slate-400 py-4">Aucune nouvelle commande</p>:newOrders.map(order=>{
                       const safeItems = Array.isArray(order.items) ? order.items : [];
                       return (
@@ -1115,7 +1157,6 @@
               </div>
             )}
             
-            {/* MODALE DONNÉES avec sélection de marque corrigée */}
             {showDataModal && isAdmin && (
               <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
                 <div className="bg-slate-800 w-full max-w-[340px] lg:max-w-2xl lg:mx-auto rounded-2xl p-6 shadow-2xl border border-slate-700">
@@ -1127,7 +1168,6 @@
                         Importer
                         <input type="file" className="hidden" accept=".xlsx,.xls,.csv" onChange={(e)=>{ if(e.target.files[0]) analyzeImportFile(e.target.files[0]); e.target.value=''; }} />
                       </label>
-                      {/* Correction du bug : le select utilise setSelectedBrandForBatch avec parseInt, et la valeur par défaut est vide */}
                       <select 
                         value={selectedBrandForBatch === null ? "" : selectedBrandForBatch} 
                         onChange={(e) => {
@@ -1355,6 +1395,21 @@
             )}
             
             {isAdmin && <DebugConsole />}
+          </div>
+          
+          {/* Barre de navigation mobile (uniquement sur écrans < 1024px) */}
+          <div className="mobile-bottom-nav">
+            <button 
+              onClick={() => setShowCartModal(true)} 
+              className="cart-button"
+            >
+              🛒
+            </button>
+            {cart.length > 0 && (
+              <span className="absolute -top-2 -right-2 bg-emerald-600 text-white text-[10px] font-bold rounded-full w-5 h-5 flex items-center justify-center shadow-md" style={{ right: 'calc(50% - 32px)', top: '8px' }}>
+                {cart.reduce((s,i)=>s+i.quantity,0)}
+              </span>
+            )}
           </div>
           <style>{`::-webkit-scrollbar { display: none; } @keyframes fade-in-down { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } } .animate-fade-in-down { animation: fade-in-down 0.3s ease-out; }`}</style>
         </div>
