@@ -53,6 +53,7 @@
       }
     }
 
+    // Fonction utilitaire de traitement d'image : redimension à 800px, WebP qualité 0.8
     const processImage = (file) => {
       return new Promise((resolve, reject) => {
         if (!file.type.startsWith('image/')) {
@@ -92,6 +93,7 @@
       });
     };
 
+    // Upload d'une image traitée vers Firebase Storage
     const uploadImageAndGetUrl = async (file, pathPrefix = 'products') => {
       try {
         const processedBlob = await processImage(file);
@@ -201,6 +203,7 @@
       const logsEndRef = useRef(null);
       const [previewData, setPreviewData] = useState(null);
       const [isImporting, setIsImporting] = useState(false);
+      const [isBatchUploading, setIsBatchUploading] = useState(false);
       const firebaseInitialized = useRef(false);
       const [firebaseReady, setFirebaseReady] = useState(false);
       const initialLoadDone = useRef(false);
@@ -415,6 +418,93 @@
       const deleteProduct = (brandId, productId) => { 
         setBrands(brands.map(b => b.id === brandId ? { ...b, products: b.products.filter(p => p.id !== productId) } : b)); 
         notify("Produit supprimé"); 
+      };
+      
+      // Traitement par lot d'images (association par nom de fichier)
+      const handleBatchImageUpload = async (files) => {
+        if (!files || files.length === 0) return;
+        setIsBatchUploading(true);
+        let successCount = 0;
+        let errorCount = 0;
+        
+        // Parcourir chaque fichier
+        for (const file of files) {
+          try {
+            const fileName = file.name;
+            const baseName = fileName.replace(/\.[^/.]+$/, ''); // sans extension
+            let matched = false;
+            
+            // 1. Recherche d'une marque exacte (insensible à la casse)
+            const brandMatch = brands.find(b => b.name.toLowerCase() === baseName.toLowerCase());
+            if (brandMatch) {
+              // Upload comme image de marque
+              const url = await uploadImageAndGetUrl(file, 'brands');
+              setBrands(prev => prev.map(b => 
+                b.id === brandMatch.id ? { ...b, image: url } : b
+              ));
+              notify(`✅ Image de la marque "${brandMatch.name}" mise à jour`);
+              successCount++;
+              matched = true;
+              continue;
+            }
+            
+            // 2. Recherche d'un produit : format "Marque_Produit" (ou "Marque-Produit", "Marque Produit"?)
+            // On teste les séparateurs courants : '_', '-', ' '
+            let separator = null;
+            let candidateBrand = null;
+            let candidateProduct = null;
+            const separators = ['_', '-', ' '];
+            for (const sep of separators) {
+              if (baseName.includes(sep)) {
+                const parts = baseName.split(sep);
+                if (parts.length >= 2) {
+                  const brandNameCandidate = parts[0];
+                  const productNameCandidate = parts.slice(1).join(sep); // on garde le reste
+                  const brand = brands.find(b => b.name.toLowerCase() === brandNameCandidate.toLowerCase());
+                  if (brand) {
+                    const product = brand.products.find(p => p.name.toLowerCase() === productNameCandidate.toLowerCase());
+                    if (product) {
+                      separator = sep;
+                      candidateBrand = brand;
+                      candidateProduct = product;
+                      break;
+                    }
+                  }
+                }
+              }
+            }
+            
+            if (candidateBrand && candidateProduct) {
+              // Upload comme image de produit
+              const url = await uploadImageAndGetUrl(file, 'products');
+              setBrands(prev => prev.map(b => 
+                b.id === candidateBrand.id ? {
+                  ...b,
+                  products: b.products.map(p => 
+                    p.id === candidateProduct.id ? { ...p, image: url } : p
+                  )
+                } : b
+              ));
+              notify(`✅ Image du produit "${candidateProduct.name}" (${candidateBrand.name}) mise à jour`);
+              successCount++;
+              matched = true;
+              continue;
+            }
+            
+            if (!matched) {
+              addLog('error', `Aucune correspondance pour le fichier: ${fileName}`);
+              notify(`❌ Aucune correspondance trouvée pour "${fileName}"`);
+              errorCount++;
+            }
+          } catch (err) {
+            addLog('error', `Erreur lors du traitement de ${file.name}: ${err.message}`);
+            notify(`❌ Erreur pour "${file.name}" : ${err.message}`);
+            errorCount++;
+          }
+        }
+        
+        setIsBatchUploading(false);
+        notify(`Traitement terminé : ${successCount} réussis, ${errorCount} échecs.`);
       };
       
       const exportToExcel = () => {
@@ -648,12 +738,7 @@
           {notification && <div className="fixed top-6 z-[100] bg-slate-800 text-slate-100 px-6 py-3 rounded-full text-xs font-bold shadow-2xl animate-fade-in-down border border-indigo-500/30">{notification}</div>}
           <div className={`w-full h-full overflow-y-auto p-4 transition-opacity duration-300 ${isTransitioning ? 'opacity-0' : 'opacity-100'}`}>
             <div className="flex justify-between items-center mb-8 mt-2">
-              {/* Logo LD Holding à la place du texte */}
-              <img 
-                src="LDHOLDING-removebg-preview.png" 
-                alt="LD Holding" 
-                className="h-[60px] w-auto object-contain"
-              />
+              <img src="LDHOLDING-removebg-preview.png" alt="LD Holding" className="h-[60px] w-auto object-contain" />
               <div className="flex items-center gap-2">
                 {isAdmin && (
                   <button onClick={() => setShowPrices(!showPrices)} className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition-all active:scale-95 ${showPrices ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-300'}`} title={showPrices ? "Masquer les prix" : "Afficher les prix"}>{showPrices ? 'DZD' : 'DZD\u0337'}</button>
@@ -900,6 +985,10 @@
                         Choisir un fichier Excel à importer
                         <input type="file" className="hidden" accept=".xlsx,.xls,.csv" onChange={(e)=>{ if(e.target.files[0]) analyzeImportFile(e.target.files[0]); e.target.value=''; }} />
                       </label>
+                      <label className={`w-full py-3 text-center rounded-xl font-bold transition-all active:scale-95 ${isBatchUploading ? 'bg-gray-500 cursor-not-allowed' : 'bg-green-600 text-white cursor-pointer hover:bg-green-500'}`}>
+                        {isBatchUploading ? 'Traitement en cours...' : 'Images (lot)'}
+                        <input type="file" className="hidden" accept="image/*" multiple disabled={isBatchUploading} onChange={(e)=>{ if(e.target.files.length) handleBatchImageUpload(Array.from(e.target.files)); e.target.value=''; }} />
+                      </label>
                     </div>
                   ) : (
                     <div className="mt-2">
@@ -916,7 +1005,10 @@
                       </div>
                     </div>
                   )}
-                  <p className="text-[10px] text-slate-400 mt-4 text-center">Format : colonne A=Marque, B=Produit, C=Quantité, D=Prix (avec en-têtes)</p>
+                  <p className="text-[10px] text-slate-400 mt-4 text-center">
+                    Images : nom exact de la marque (ex: Nike.jpg) ou Marque_Produit (ex: Nike_AirMax.jpg)<br/>
+                    Formats supportés : tout format image (sera converti en WebP 800px)
+                  </p>
                 </div>
               </div>
             )}
