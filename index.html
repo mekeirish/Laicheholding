@@ -53,7 +53,6 @@
       }
     }
 
-    // Normalisation (minuscules, suppression des accents)
     const normalizeString = (str) => {
       return str.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     };
@@ -271,7 +270,7 @@
         return () => { mounted = false; };
       }, [addLog]);
       
-      // Chargement initial depuis Firebase
+      // Chargement initial
       useEffect(() => {
         if (!firebaseReady || !window.firebase || initialLoadDone.current) return;
         const db = window.firebase.database();
@@ -302,7 +301,7 @@
         });
       }, [firebaseReady]);
       
-      // Sauvegarde immédiate dans Firebase
+      // Sauvegardes globales pour le reste de l'app (non modifié)
       useEffect(() => {
         if (!firebaseReady || !initialLoadDone.current) return;
         window.firebase.database().ref('data').set(brands)
@@ -322,7 +321,7 @@
       
       const notify = (msg) => { setNotification(msg); setTimeout(() => setNotification(null), 2000); };
       
-      // Actions manuelles (marques, produits) – inchangées
+      // ========== Actions manuelles (marques, produits) ==========
       const addBrand = async () => {
         if (!firebaseReady) { notify("Firebase pas encore prêt"); return; }
         if (newBrand.name && newBrand.name.trim()) {
@@ -416,7 +415,7 @@
         notify("Produit supprimé"); 
       };
       
-      // ========== TRAITEMENT PAR LOT DÉCOUPLÉ (Storage puis Database) ==========
+      // ========== TRAITEMENT PAR LOT RÉÉCRIT (séquentiel, mise à jour ciblée, pas de notify dans la boucle) ==========
       const handleBatchProductUpload = async (files) => {
         if (!files || files.length === 0) return;
         if (!selectedBrandForBatch) {
@@ -428,54 +427,14 @@
           return;
         }
         
-        // Bloc global try/finally pour forcer la réinitialisation
+        // Notification unique de début
+        notify(`Import de ${files.length} produit(s) en cours...`);
+        
         try {
           setIsUploadingBatch(true);
-          setBatchProgress({ current: 0, total: files.length, status: 'Upload des images vers le cloud...' });
+          setBatchProgress({ current: 0, total: files.length, status: 'Préparation...' });
           
-          // ===== ÉTAPE 1 : UPLOAD DE TOUTES LES IMAGES VERS STORAGE (en parallèle) =====
-          const uploadTasks = files.map(async (file, index) => {
-            // Mise à jour de la progression (uniquement pour le feedback)
-            setBatchProgress({ current: index + 1, total: files.length, status: `Upload de ${file.name}...` });
-            try {
-              const url = await uploadImageAndGetUrl(file, 'products');
-              const baseName = file.name.replace(/\.[^/.]+$/, '').trim();
-              if (!baseName) throw new Error('Nom de fichier invalide');
-              return { success: true, url, baseName, originalFile: file };
-            } catch (err) {
-              addLog('error', `Upload échoué pour ${file.name}: ${err.message}`);
-              return { success: false, fileName: file.name, error: err.message };
-            }
-          });
-          
-          const uploadResults = await Promise.allSettled(uploadTasks);
-          const successfulUploads = [];
-          const failedUploads = [];
-          
-          for (const result of uploadResults) {
-            if (result.status === 'fulfilled' && result.value.success) {
-              successfulUploads.push(result.value);
-            } else {
-              let fileName = 'fichier inconnu';
-              let errorMsg = 'Erreur inconnue';
-              if (result.status === 'fulfilled') {
-                fileName = result.value.fileName;
-                errorMsg = result.value.error;
-              } else if (result.status === 'rejected') {
-                errorMsg = result.reason?.message || 'Erreur d\'exécution';
-              }
-              failedUploads.push({ fileName, errorMsg });
-            }
-          }
-          
-          if (successfulUploads.length === 0) {
-            throw new Error(`Aucune image n'a pu être uploadée. Échecs : ${failedUploads.length}`);
-          }
-          
-          setBatchProgress({ current: successfulUploads.length, total: files.length, status: 'Mise à jour de la base de données...' });
-          
-          // ===== ÉTAPE 2 : MISE À JOUR DE LA REALTIME DATABASE =====
-          // Récupérer la marque cible
+          // Récupérer la marque cible et ses produits actuels
           let updatedBrands = [...brands];
           const brandIndex = updatedBrands.findIndex(b => b.id === selectedBrandForBatch);
           if (brandIndex === -1) throw new Error('La marque sélectionnée n\'existe plus.');
@@ -483,55 +442,73 @@
           const brandName = updatedBrands[brandIndex].name;
           let currentProducts = updatedBrands[brandIndex].products;
           let createdCount = 0, updatedCount = 0;
+          let errorCount = 0;
           
-          for (const item of successfulUploads) {
-            const { baseName, url } = item;
-            const normalizedBase = normalizeString(baseName);
-            const existingProduct = currentProducts.find(p => normalizeString(p.name) === normalizedBase);
-            if (existingProduct) {
-              const productIdx = currentProducts.findIndex(p => p.id === existingProduct.id);
-              if (productIdx !== -1) {
-                currentProducts[productIdx] = { ...existingProduct, image: url };
-                updatedCount++;
-                notify(`✅ Produit "${existingProduct.name}" mis à jour dans "${brandName}"`);
+          // Traitement séquentiel des images (simple boucle for...of)
+          for (const file of files) {
+            // Mise à jour de la progression (sans notify)
+            setBatchProgress(prev => ({ ...prev, current: prev.current + 1, status: `Traitement de ${file.name}...` }));
+            
+            try {
+              // 1. Upload vers Storage
+              const url = await uploadImageAndGetUrl(file, 'products');
+              const baseName = file.name.replace(/\.[^/.]+$/, '').trim();
+              if (!baseName) throw new Error('Nom de fichier invalide');
+              
+              const normalizedBase = normalizeString(baseName);
+              const existingProduct = currentProducts.find(p => normalizeString(p.name) === normalizedBase);
+              
+              if (existingProduct) {
+                const productIdx = currentProducts.findIndex(p => p.id === existingProduct.id);
+                if (productIdx !== -1) {
+                  currentProducts[productIdx] = { ...existingProduct, image: url };
+                  updatedCount++;
+                }
+              } else {
+                const newProductObj = {
+                  id: Date.now() + Math.random(),
+                  name: baseName,
+                  qty: 0,
+                  price: 0,
+                  image: url
+                };
+                currentProducts.push(newProductObj);
+                createdCount++;
               }
-            } else {
-              const newProductObj = {
-                id: Date.now() + Math.random(),
-                name: baseName,
-                qty: 0,
-                price: 0,
-                image: url
-              };
-              currentProducts.push(newProductObj);
-              createdCount++;
-              notify(`✅ Nouveau produit "${baseName}" créé dans "${brandName}"`);
+            } catch (err) {
+              console.error(`Erreur pour ${file.name}:`, err);
+              errorCount++;
+              addLog('error', `Erreur pour ${file.name}: ${err.message}`);
             }
           }
           
-          updatedBrands[brandIndex].products = currentProducts;
-          
-          // Envoyer les modifications à Firebase (set global)
-          if (updatedBrands.length > 0) {
-            await window.firebase.database().ref('data').set(updatedBrands);
+          // Mettre à jour la base de données (écriture ciblée uniquement sur la marque)
+          if (createdCount + updatedCount > 0) {
+            console.log("Données finales envoyées à Firebase:", currentProducts);
+            const db = window.firebase.database();
+            await db.ref(`data/${brandIndex}/products`).set(currentProducts);
+            // Mettre à jour l'état local après succès
+            updatedBrands[brandIndex].products = currentProducts;
             setBrands(updatedBrands);
           } else {
-            throw new Error('Aucune donnée à sauvegarder.');
+            throw new Error('Aucun produit n\'a été créé ou mis à jour.');
           }
           
-          setBatchProgress({ current: successfulUploads.length, total: files.length, status: 'Terminé' });
+          setBatchProgress({ current: files.length, total: files.length, status: 'Terminé' });
           
-          // Gestion de la fermeture de la modale
-          if (failedUploads.length === 0) {
+          // Notification unique à la fin
+          if (errorCount === 0) {
             notify(`✅ Import réussi : ${createdCount} créés, ${updatedCount} mis à jour.`);
             setShowBatchModal(false);
           } else {
-            const partialSuccess = createdCount + updatedCount > 0;
-            const msg = `Import terminé avec ${failedUploads.length} erreur(s). ${partialSuccess ? 'Voulez-vous fermer la fenêtre ?' : 'Aucune image importée.'}`;
+            const partialSuccess = (createdCount + updatedCount) > 0;
+            const msg = `Import terminé avec ${errorCount} erreur(s). ${partialSuccess ? 'Voulez-vous fermer la fenêtre ?' : 'Aucune image importée.'}`;
             if (partialSuccess && window.confirm(msg)) {
               setShowBatchModal(false);
             } else if (!partialSuccess) {
-              notify(`❌ Échec total : ${failedUploads.length} image(s) non uploadée(s).`);
+              notify(`❌ Échec total. Aucune image importée.`);
+            } else {
+              notify(`⚠️ Import partiel : ${createdCount} créés, ${updatedCount} mis à jour, ${errorCount} erreur(s).`);
             }
           }
         } catch (err) {
@@ -539,7 +516,7 @@
           notify(`❌ Erreur critique : ${err.message}`);
           addLog('error', 'handleBatchProductUpload: ' + err.message);
         } finally {
-          // Réinitialisation obligatoire de l'état d'upload
+          // Réinitialisation garantie
           setIsUploadingBatch(false);
           setBatchProgress({ current: 0, total: 0, status: '' });
         }
