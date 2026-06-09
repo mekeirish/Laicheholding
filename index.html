@@ -239,7 +239,7 @@
         };
       }, [addLog]);
       
-      // Firebase init
+      // ========== INITIALISATION FIREBASE ==========
       useEffect(() => {
         let mounted = true;
         const initFirebase = () => {
@@ -268,7 +268,7 @@
         return () => { mounted = false; };
       }, [addLog]);
       
-      // Chargement initial depuis Firebase
+      // ========== CHARGEMENT DES DONNÉES DEPUIS FIREBASE ==========
       useEffect(() => {
         if (!firebaseReady || !window.firebase || initialLoadDone.current) return;
         const db = window.firebase.database();
@@ -280,7 +280,7 @@
             const cleaned = cleanBrands(raw);
             setBrands(cleaned);
             localStorage.setItem('marketHubBrands', JSON.stringify(cleaned));
-            addLog('log', 'Brands chargés');
+            addLog('log', 'Brands chargés depuis Firebase');
           }
           if (data?.orders) {
             let rawOrders = data.orders;
@@ -288,7 +288,7 @@
             const cleanedOrders = cleanOrders(rawOrders);
             setOrders(cleanedOrders);
             localStorage.setItem('marketHubOrders', JSON.stringify(cleanedOrders));
-            addLog('log', 'Orders chargés');
+            addLog('log', 'Orders chargés depuis Firebase');
           }
           initialLoadDone.current = true;
           setIsLoading(false);
@@ -299,30 +299,37 @@
         });
       }, [firebaseReady]);
       
-      // Sauvegarde différée
+      // ========== SAUVEGARDE DIFFÉRÉE DANS FIREBASE ==========
       useEffect(() => {
         if (!firebaseReady || !initialLoadDone.current) return;
         if (brandsTimeoutRef.current) clearTimeout(brandsTimeoutRef.current);
         brandsTimeoutRef.current = setTimeout(() => {
-          window.firebase.database().ref('data').set(brands).catch(err => addLog('error', err.message));
+          window.firebase.database().ref('data').set(brands)
+            .then(() => addLog('log', 'Brands sauvegardés dans Firebase'))
+            .catch(err => addLog('error', 'Erreur sauvegarde brands: ' + err.message));
         }, 500);
       }, [brands, firebaseReady]);
+      
       useEffect(() => {
         if (!firebaseReady || !initialLoadDone.current) return;
         if (ordersTimeoutRef.current) clearTimeout(ordersTimeoutRef.current);
         ordersTimeoutRef.current = setTimeout(() => {
-          window.firebase.database().ref('orders').set(orders).catch(err => addLog('error', err.message));
+          window.firebase.database().ref('orders').set(orders)
+            .then(() => addLog('log', 'Orders sauvegardés dans Firebase'))
+            .catch(err => addLog('error', 'Erreur sauvegarde orders: ' + err.message));
         }, 500);
       }, [orders, firebaseReady]);
       
+      // ========== SAUVEGARDES LOCALES ==========
       useEffect(() => { localStorage.setItem('marketHubCart', JSON.stringify(cart)); }, [cart]);
       useEffect(() => { localStorage.setItem('marketHubBrands', JSON.stringify(brands)); }, [brands]);
       useEffect(() => { localStorage.setItem('marketHubOrders', JSON.stringify(orders)); }, [orders]);
       
       const notify = (msg) => { setNotification(msg); setTimeout(() => setNotification(null), 2000); };
       
-      // ========== GESTION MANUELLE DES IMAGES (marques, produits) ==========
+      // ========== GESTION MANUELLE DES IMAGES ==========
       const addBrand = async () => {
+        if (!firebaseReady) { notify("Firebase pas encore prêt"); return; }
         if (newBrand.name && newBrand.name.trim()) {
           let imageUrl = null;
           if (newBrand.imageFile) {
@@ -352,6 +359,7 @@
       const deleteBrand = (id) => { setBrands(brands.filter(b => b.id !== id)); notify("Marque supprimée"); };
       
       const saveBrandEdit = async () => {
+        if (!firebaseReady) { notify("Firebase pas encore prêt"); return; }
         if (editingBrand.name && editingBrand.name.trim()) {
           let imageUrl = editingBrand.image;
           if (editingBrand.imageFile) {
@@ -372,6 +380,7 @@
       };
       
       const addProduct = async () => {
+        if (!firebaseReady) { notify("Firebase pas encore prêt"); return; }
         if (newProduct.name && newProduct.name.trim() && newProduct.brandId) {
           let imageUrl = null;
           if (newProduct.imageFile) {
@@ -400,6 +409,7 @@
       };
       
       const saveProductEdit = async () => {
+        if (!firebaseReady) { notify("Firebase pas encore prêt"); return; }
         if (editingProduct.name && editingProduct.name.trim()) {
           let imageUrl = editingProduct.image;
           if (editingProduct.imageFile) {
@@ -430,7 +440,7 @@
       // ========== TRAITEMENT PAR LOT (images) ==========
       const handleBatchImageUpload = async (files) => {
         if (!files || files.length === 0) return;
-        if (!window.firebase || !window.firebase.storage) {
+        if (!firebaseReady || !window.firebase || !window.firebase.storage) {
           notify("Firebase Storage n'est pas encore prêt. Veuillez réessayer.");
           return;
         }
@@ -438,16 +448,18 @@
         let successCount = 0;
         let errorCount = 0;
         
-        let updatedBrands = [...brands]; // copie locale
+        // On travaille sur une copie locale des marques
+        let updatedBrands = JSON.parse(JSON.stringify(brands)); // copie profonde
         
         for (const file of files) {
           try {
             const fileName = file.name;
-            const baseName = fileName.replace(/\.[^/.]+$/, ''); // sans extension
+            // Supprimer l'extension
+            const baseName = fileName.replace(/\.[^/.]+$/, '').toLowerCase();
             let matched = false;
             
-            // 1. Correspondance exacte avec une marque
-            const brandMatch = updatedBrands.find(b => b.name.toLowerCase() === baseName.toLowerCase());
+            // 1. Correspondance exacte avec une marque (insensible à la casse)
+            const brandMatch = updatedBrands.find(b => b.name.toLowerCase() === baseName);
             if (brandMatch) {
               const url = await uploadImageAndGetUrl(file, 'brands');
               const idx = updatedBrands.findIndex(b => b.id === brandMatch.id);
@@ -459,43 +471,35 @@
             }
             
             // 2. Correspondance produit : format "Marque_Separateur_Produit"
-            let separator = null;
-            let candidateBrand = null;
-            let candidateProduct = null;
-            const separators = ['_', '-', ' '];
-            for (const sep of separators) {
-              if (baseName.includes(sep)) {
-                const parts = baseName.split(sep);
+            let found = false;
+            for (const separator of ['_', '-', ' ']) {
+              if (baseName.includes(separator)) {
+                const parts = baseName.split(separator);
                 if (parts.length >= 2) {
                   const brandNameCandidate = parts[0];
-                  const productNameCandidate = parts.slice(1).join(sep);
-                  const brand = updatedBrands.find(b => b.name.toLowerCase() === brandNameCandidate.toLowerCase());
+                  const productNameCandidate = parts.slice(1).join(separator);
+                  const brand = updatedBrands.find(b => b.name.toLowerCase() === brandNameCandidate);
                   if (brand) {
-                    const product = brand.products.find(p => p.name.toLowerCase() === productNameCandidate.toLowerCase());
+                    const product = brand.products.find(p => p.name.toLowerCase() === productNameCandidate);
                     if (product) {
-                      separator = sep;
-                      candidateBrand = brand;
-                      candidateProduct = product;
+                      const url = await uploadImageAndGetUrl(file, 'products');
+                      const brandIdx = updatedBrands.findIndex(b => b.id === brand.id);
+                      if (brandIdx !== -1) {
+                        const productIdx = updatedBrands[brandIdx].products.findIndex(p => p.id === product.id);
+                        if (productIdx !== -1) {
+                          updatedBrands[brandIdx].products[productIdx] = { ...product, image: url };
+                        }
+                      }
+                      notify(`✅ Image du produit "${product.name}" (${brand.name}) mise à jour`);
+                      successCount++;
+                      found = true;
+                      matched = true;
                       break;
                     }
                   }
                 }
               }
-            }
-            
-            if (candidateBrand && candidateProduct) {
-              const url = await uploadImageAndGetUrl(file, 'products');
-              const brandIdx = updatedBrands.findIndex(b => b.id === candidateBrand.id);
-              if (brandIdx !== -1) {
-                const productIdx = updatedBrands[brandIdx].products.findIndex(p => p.id === candidateProduct.id);
-                if (productIdx !== -1) {
-                  updatedBrands[brandIdx].products[productIdx] = { ...candidateProduct, image: url };
-                }
-              }
-              notify(`✅ Image du produit "${candidateProduct.name}" (${candidateBrand.name}) mise à jour`);
-              successCount++;
-              matched = true;
-              continue;
+              if (found) break;
             }
             
             if (!matched) {
@@ -640,7 +644,7 @@
       const cancelConfirm = () => setConfirmAction(null);
       const executeConfirm = () => { if(confirmAction?.callback) confirmAction.callback(); setConfirmAction(null); };
       
-      // ========== COMMANDES LIVRÉES (export CSV, nettoyage) ==========
+      // ========== COMMANDES LIVRÉES ==========
       const exportDeliveredHistory = () => {
         if (deliveredOrders.length === 0) {
           notify("Aucune commande livrée à exporter");
@@ -748,7 +752,7 @@
       const safeBrands = Array.isArray(brands) ? brands : [];
       const safeSelectedBrand = selectedBrand && selectedBrand.products && Array.isArray(selectedBrand.products) ? selectedBrand : null;
       
-      // ========== RENDU PRINCIPAL ==========
+      // ========== RENDU PRINCIPAL (HTML) ==========
       return (
         <div className="fixed inset-0 bg-slate-900 flex justify-center font-sans">
           {notification && <div className="fixed top-6 z-[100] bg-slate-800 text-slate-100 px-6 py-3 rounded-full text-xs font-bold shadow-2xl animate-fade-in-down border border-indigo-500/30">{notification}</div>}
