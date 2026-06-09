@@ -322,7 +322,7 @@
       
       const notify = (msg) => { setNotification(msg); setTimeout(() => setNotification(null), 2000); };
       
-      // ========== Actions manuelles (marques, produits) ==========
+      // Actions manuelles (marques, produits) – inchangées
       const addBrand = async () => {
         if (!firebaseReady) { notify("Firebase pas encore prêt"); return; }
         if (newBrand.name && newBrand.name.trim()) {
@@ -416,7 +416,7 @@
         notify("Produit supprimé"); 
       };
       
-      // ========== TRAITEMENT PAR LOT AVEC Promise.allSettled ==========
+      // ========== TRAITEMENT PAR LOT DÉCOUPLÉ (Storage puis Database) ==========
       const handleBatchProductUpload = async (files) => {
         if (!files || files.length === 0) return;
         if (!selectedBrandForBatch) {
@@ -428,97 +428,118 @@
           return;
         }
         
-        // Bloc try...finally pour garantir la réinitialisation
+        // Bloc global try/finally pour forcer la réinitialisation
         try {
           setIsUploadingBatch(true);
-          setBatchProgress({ current: 0, total: files.length, status: 'Préparation...' });
+          setBatchProgress({ current: 0, total: files.length, status: 'Upload des images vers le cloud...' });
           
-          // Copie locale des marques pour modifications
-          let updatedBrands = [...brands];
-          const brandIndex = updatedBrands.findIndex(b => b.id === selectedBrandForBatch);
-          if (brandIndex === -1) {
-            notify("La marque sélectionnée n'existe plus.");
-            return;
-          }
-          const brandName = updatedBrands[brandIndex].name;
-          let currentProducts = updatedBrands[brandIndex].products;
-          
-          // Préparer les tâches d'upload pour tous les fichiers
+          // ===== ÉTAPE 1 : UPLOAD DE TOUTES LES IMAGES VERS STORAGE (en parallèle) =====
           const uploadTasks = files.map(async (file, index) => {
-            // Mise à jour de la progression
-            setBatchProgress({ current: index + 1, total: files.length, status: `Traitement de ${file.name}...` });
-            
+            // Mise à jour de la progression (uniquement pour le feedback)
+            setBatchProgress({ current: index + 1, total: files.length, status: `Upload de ${file.name}...` });
             try {
+              const url = await uploadImageAndGetUrl(file, 'products');
               const baseName = file.name.replace(/\.[^/.]+$/, '').trim();
               if (!baseName) throw new Error('Nom de fichier invalide');
-              const normalizedBase = normalizeString(baseName);
-              const existingProduct = currentProducts.find(p => normalizeString(p.name) === normalizedBase);
-              const url = await uploadImageAndGetUrl(file, 'products');
-              
-              return { success: true, baseName, url, existingProduct, brandName };
+              return { success: true, url, baseName, originalFile: file };
             } catch (err) {
-              addLog('error', `Erreur pour ${file.name}: ${err.message}`);
+              addLog('error', `Upload échoué pour ${file.name}: ${err.message}`);
               return { success: false, fileName: file.name, error: err.message };
             }
           });
           
-          // Exécution parallèle des uploads
-          const results = await Promise.allSettled(uploadTasks);
+          const uploadResults = await Promise.allSettled(uploadTasks);
+          const successfulUploads = [];
+          const failedUploads = [];
           
-          let successCount = 0;
-          let errorCount = 0;
-          let createdCount = 0;
-          let updatedCount = 0;
-          
-          // Traitement des résultats
-          for (const result of results) {
+          for (const result of uploadResults) {
             if (result.status === 'fulfilled' && result.value.success) {
-              const { baseName, url, existingProduct, brandName: bName } = result.value;
-              if (existingProduct) {
-                const productIdx = currentProducts.findIndex(p => p.id === existingProduct.id);
-                if (productIdx !== -1) {
-                  currentProducts[productIdx] = { ...existingProduct, image: url };
-                  updatedCount++;
-                  notify(`✅ Produit "${existingProduct.name}" mis à jour dans "${bName}"`);
-                }
-              } else {
-                const newProductObj = {
-                  id: Date.now() + Math.random(),
-                  name: baseName,
-                  qty: 0,
-                  price: 0,
-                  image: url
-                };
-                currentProducts.push(newProductObj);
-                createdCount++;
-                notify(`✅ Nouveau produit "${baseName}" créé dans "${bName}"`);
-              }
-              successCount++;
+              successfulUploads.push(result.value);
             } else {
-              errorCount++;
+              let fileName = 'fichier inconnu';
+              let errorMsg = 'Erreur inconnue';
+              if (result.status === 'fulfilled') {
+                fileName = result.value.fileName;
+                errorMsg = result.value.error;
+              } else if (result.status === 'rejected') {
+                errorMsg = result.reason?.message || 'Erreur d\'exécution';
+              }
+              failedUploads.push({ fileName, errorMsg });
             }
           }
           
-          // Mettre à jour les produits dans la copie
+          if (successfulUploads.length === 0) {
+            throw new Error(`Aucune image n'a pu être uploadée. Échecs : ${failedUploads.length}`);
+          }
+          
+          setBatchProgress({ current: successfulUploads.length, total: files.length, status: 'Mise à jour de la base de données...' });
+          
+          // ===== ÉTAPE 2 : MISE À JOUR DE LA REALTIME DATABASE =====
+          // Récupérer la marque cible
+          let updatedBrands = [...brands];
+          const brandIndex = updatedBrands.findIndex(b => b.id === selectedBrandForBatch);
+          if (brandIndex === -1) throw new Error('La marque sélectionnée n\'existe plus.');
+          
+          const brandName = updatedBrands[brandIndex].name;
+          let currentProducts = updatedBrands[brandIndex].products;
+          let createdCount = 0, updatedCount = 0;
+          
+          for (const item of successfulUploads) {
+            const { baseName, url } = item;
+            const normalizedBase = normalizeString(baseName);
+            const existingProduct = currentProducts.find(p => normalizeString(p.name) === normalizedBase);
+            if (existingProduct) {
+              const productIdx = currentProducts.findIndex(p => p.id === existingProduct.id);
+              if (productIdx !== -1) {
+                currentProducts[productIdx] = { ...existingProduct, image: url };
+                updatedCount++;
+                notify(`✅ Produit "${existingProduct.name}" mis à jour dans "${brandName}"`);
+              }
+            } else {
+              const newProductObj = {
+                id: Date.now() + Math.random(),
+                name: baseName,
+                qty: 0,
+                price: 0,
+                image: url
+              };
+              currentProducts.push(newProductObj);
+              createdCount++;
+              notify(`✅ Nouveau produit "${baseName}" créé dans "${brandName}"`);
+            }
+          }
+          
           updatedBrands[brandIndex].products = currentProducts;
           
-          if (successCount > 0) {
+          // Envoyer les modifications à Firebase (set global)
+          if (updatedBrands.length > 0) {
+            await window.firebase.database().ref('data').set(updatedBrands);
             setBrands(updatedBrands);
+          } else {
+            throw new Error('Aucune donnée à sauvegarder.');
           }
           
-          setBatchProgress({ current: files.length, total: files.length, status: 'Terminé' });
+          setBatchProgress({ current: successfulUploads.length, total: files.length, status: 'Terminé' });
           
           // Gestion de la fermeture de la modale
-          if (errorCount === 0) {
+          if (failedUploads.length === 0) {
             notify(`✅ Import réussi : ${createdCount} créés, ${updatedCount} mis à jour.`);
             setShowBatchModal(false);
-          } else if (successCount > 0) {
-            const confirmClose = window.confirm(`Import terminé avec ${errorCount} erreur(s). Voulez-vous fermer la fenêtre ?`);
-            if (confirmClose) setShowBatchModal(false);
           } else {
-            notify(`❌ Aucune image importée (${errorCount} échec(s)).`);
+            const partialSuccess = createdCount + updatedCount > 0;
+            const msg = `Import terminé avec ${failedUploads.length} erreur(s). ${partialSuccess ? 'Voulez-vous fermer la fenêtre ?' : 'Aucune image importée.'}`;
+            if (partialSuccess && window.confirm(msg)) {
+              setShowBatchModal(false);
+            } else if (!partialSuccess) {
+              notify(`❌ Échec total : ${failedUploads.length} image(s) non uploadée(s).`);
+            }
           }
+        } catch (err) {
+          console.error('Erreur globale handleBatchProductUpload:', err);
+          notify(`❌ Erreur critique : ${err.message}`);
+          addLog('error', 'handleBatchProductUpload: ' + err.message);
         } finally {
+          // Réinitialisation obligatoire de l'état d'upload
           setIsUploadingBatch(false);
           setBatchProgress({ current: 0, total: 0, status: '' });
         }
@@ -738,11 +759,11 @@
       const safeBrands = Array.isArray(brands) ? brands : [];
       const safeSelectedBrand = selectedBrand && selectedBrand.products && Array.isArray(selectedBrand.products) ? selectedBrand : null;
       
+      // Rendu principal (identique à la version précédente)
       return (
         <div className="fixed inset-0 bg-slate-900 flex justify-center font-sans">
           {notification && <div className="fixed top-6 z-[100] bg-slate-800 text-slate-100 px-6 py-3 rounded-full text-xs font-bold shadow-2xl animate-fade-in-down border border-indigo-500/30">{notification}</div>}
           <div className={`w-full h-full overflow-y-auto p-4 transition-opacity duration-300 ${isTransitioning ? 'opacity-0' : 'opacity-100'}`}>
-            {/* Header avec logo centré */}
             <div className="flex justify-between items-center mb-8 mt-2 relative">
               <button onClick={goHome} className="text-slate-400 text-[11px] font-medium tracking-tight hover:text-slate-200 z-10">
                 {currentView === 'home' ? 'LD Holding' : '← Retour'}
