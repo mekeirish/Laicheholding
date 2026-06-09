@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-  <title>LD Holding - Dashboard B2B</title>
+  <title>LD Holding - Gestion B2B</title>
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#0f172a">
   <script src="https://cdn.tailwindcss.com"></script>
@@ -17,6 +17,7 @@
       }
     }
   </script>
+  <!-- Firebase (uniquement Realtime Database) -->
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
   <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
@@ -24,7 +25,7 @@
   <script src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.development.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@babel/standalone/babel.min.js"></script>
 </head>
-<body class="bg-slate-50">
+<body class="bg-slate-900">
   <div id="root"></div>
   <script>
     if ('serviceWorker' in navigator) {
@@ -96,7 +97,7 @@
       });
     };
 
-    // Upload vers ImgBB avec clé API dynamique
+    // Upload vers ImgBB avec clé API dynamique (stockée dans localStorage)
     const uploadToImgBB = async (file) => {
       const apiKey = localStorage.getItem('imgbb_api_key');
       if (!apiKey) {
@@ -442,7 +443,7 @@
         notify("Produit supprimé"); 
       };
       
-      // ========== TRAITEMENT PAR LOT AVEC IMGBB ==========
+      // ========== TRAITEMENT PAR LOT AVEC IMGBBB ==========
       const handleBatchProductUpload = async (files) => {
         if (!files || files.length === 0) return;
         if (!selectedBrandForBatch) {
@@ -453,19 +454,23 @@
           notify("Firebase non prêt.");
           return;
         }
+        
         const apiKey = localStorage.getItem('imgbb_api_key');
         if (!apiKey) {
           notify("Configuration requise : Veuillez renseigner votre clé API ImgBB dans IMGbank.");
           return;
         }
+        
         notify(`Import de ${files.length} produit(s) en cours...`);
         
         try {
           setIsUploadingBatch(true);
           setBatchProgress({ current: 0, total: files.length, status: 'Préparation...' });
+          
           let updatedBrands = [...brands];
           const brandIndex = updatedBrands.findIndex(b => b.id === selectedBrandForBatch);
           if (brandIndex === -1) throw new Error('La marque sélectionnée n\'existe plus.');
+          
           const brandName = updatedBrands[brandIndex].name;
           let currentProducts = updatedBrands[brandIndex].products;
           let createdCount = 0, updatedCount = 0, errorCount = 0;
@@ -473,12 +478,15 @@
           for (let i = 0; i < files.length; i++) {
             const file = files[i];
             setBatchProgress({ current: i + 1, total: files.length, status: `Traitement de ${file.name}...` });
+            
             try {
               const imageUrl = await uploadToImgBB(file);
               const baseName = file.name.replace(/\.[^/.]+$/, '').trim();
               if (!baseName) throw new Error('Nom de fichier invalide');
+              
               const normalizedBase = normalizeString(baseName);
               const existingProduct = currentProducts.find(p => normalizeString(p.name) === normalizedBase);
+              
               if (existingProduct) {
                 const productIdx = currentProducts.findIndex(p => p.id === existingProduct.id);
                 if (productIdx !== -1) {
@@ -486,7 +494,13 @@
                   updatedCount++;
                 }
               } else {
-                const newProductObj = { id: Date.now() + Math.random(), name: baseName, qty: 0, price: 0, image: imageUrl };
+                const newProductObj = {
+                  id: Date.now() + Math.random(),
+                  name: baseName,
+                  qty: 0,
+                  price: 0,
+                  image: imageUrl
+                };
                 currentProducts.push(newProductObj);
                 createdCount++;
               }
@@ -496,6 +510,7 @@
               addLog('error', `Erreur pour ${file.name}: ${err.message}`);
             }
           }
+          
           if (createdCount + updatedCount > 0) {
             console.log("Produits à sauvegarder:", currentProducts);
             const db = window.firebase.database();
@@ -505,16 +520,22 @@
           } else {
             throw new Error('Aucun produit n\'a été créé ou mis à jour.');
           }
+          
           setBatchProgress({ current: files.length, total: files.length, status: 'Terminé' });
+          
           if (errorCount === 0) {
             notify(`✅ Import réussi : ${createdCount} créés, ${updatedCount} mis à jour.`);
             setShowBatchModal(false);
           } else {
             const partialSuccess = (createdCount + updatedCount) > 0;
             const msg = `Import terminé avec ${errorCount} erreur(s). ${partialSuccess ? 'Voulez-vous fermer la fenêtre ?' : 'Aucune image importée.'}`;
-            if (partialSuccess && window.confirm(msg)) setShowBatchModal(false);
-            else if (!partialSuccess) notify(`❌ Échec total. Aucune image importée.`);
-            else notify(`⚠️ Import partiel : ${createdCount} créés, ${updatedCount} mis à jour, ${errorCount} erreur(s).`);
+            if (partialSuccess && window.confirm(msg)) {
+              setShowBatchModal(false);
+            } else if (!partialSuccess) {
+              notify(`❌ Échec total. Aucune image importée.`);
+            } else {
+              notify(`⚠️ Import partiel : ${createdCount} créés, ${updatedCount} mis à jour, ${errorCount} erreur(s).`);
+            }
           }
         } catch (err) {
           console.error('Erreur globale handleBatchProductUpload:', err);
@@ -740,473 +761,474 @@
       const safeBrands = Array.isArray(brands) ? brands : [];
       const safeSelectedBrand = selectedBrand && selectedBrand.products && Array.isArray(selectedBrand.products) ? selectedBrand : null;
       
-      // Statistiques
-      const totalProducts = safeBrands.reduce((acc, b) => acc + b.products.length, 0);
-      const totalStockValue = safeBrands.reduce((acc, b) => acc + b.products.reduce((sum, p) => sum + (parseFloat(p.price) * parseFloat(p.qty || 0)), 0), 0);
-      
-      // Rendu principal avec sidebar sur desktop
+      // Rendu principal avec améliorations desktop (lg:)
       return (
-        <div className="min-h-screen bg-slate-50 flex flex-col lg:flex-row">
-          {/* Barre latérale (sidebar) pour desktop, masquée en mode mobile */}
-          {isAdmin && (
-            <div className="lg:w-64 lg:flex lg:flex-col lg:fixed lg:inset-y-0 lg:z-30 lg:bg-slate-800 lg:shadow-xl hidden lg:block">
-              <div className="flex flex-col h-full">
-                <div className="flex items-center justify-center h-16 px-4 border-b border-slate-700">
-                  <img src="LDHOLDING-removebg-preview.png" alt="LD Holding" className="h-10 w-auto" />
-                </div>
-                <nav className="flex-1 px-2 py-4 space-y-2">
-                  <button onClick={() => setShowModal(true)} className="w-full flex items-center px-4 py-3 text-sm font-medium rounded-lg text-slate-300 hover:bg-slate-700 hover:text-white transition-colors">
-                    <span className="mr-3 text-xl">🏷️</span> Ajouter une marque
-                  </button>
-                  <button onClick={() => setShowBrandSelect(true)} className="w-full flex items-center px-4 py-3 text-sm font-medium rounded-lg text-slate-300 hover:bg-slate-700 hover:text-white transition-colors">
-                    <span className="mr-3 text-xl">📦</span> Ajouter un produit
-                  </button>
-                  <button onClick={() => setShowManageModal(true)} className="w-full flex items-center px-4 py-3 text-sm font-medium rounded-lg text-slate-300 hover:bg-slate-700 hover:text-white transition-colors">
-                    <span className="mr-3 text-xl">⚙️</span> Gérer
-                  </button>
-                  <button onClick={() => setShowDataModal(true)} className="w-full flex items-center px-4 py-3 text-sm font-medium rounded-lg text-slate-300 hover:bg-slate-700 hover:text-white transition-colors">
-                    <span className="mr-3 text-xl">📊</span> Données
-                  </button>
-                  <button onClick={() => setShowOrdersModal(true)} className="w-full flex items-center px-4 py-3 text-sm font-medium rounded-lg text-slate-300 hover:bg-slate-700 hover:text-white transition-colors">
-                    <span className="mr-3 text-xl">📋</span> Commandes
-                  </button>
-                  <button onClick={() => setShowImgbbModal(true)} className="w-full flex items-center px-4 py-3 text-sm font-medium rounded-lg text-slate-300 hover:bg-slate-700 hover:text-white transition-colors">
-                    <span className="mr-3 text-xl">🖼️</span> IMGbank
-                  </button>
-                </nav>
+        <div className="fixed inset-0 bg-slate-900 flex justify-center font-sans">
+          {notification && <div className="fixed top-6 z-[100] bg-slate-800 text-slate-100 px-6 py-3 rounded-full text-xs font-bold shadow-2xl animate-fade-in-down border border-indigo-500/30">{notification}</div>}
+          <div className={`w-full h-full overflow-y-auto p-4 lg:max-w-7xl lg:mx-auto lg:px-6 lg:py-8 transition-opacity duration-300 ${isTransitioning ? 'opacity-0' : 'opacity-100'}`}>
+            <div className="flex justify-between items-center mb-8 mt-2 relative">
+              <button onClick={goHome} className="text-slate-400 text-[11px] font-medium tracking-tight hover:text-slate-200 z-10">
+                {currentView === 'home' ? 'LD Holding' : '← Retour'}
+              </button>
+              <div className="absolute left-1/2 transform -translate-x-1/2">
+                <img src="LDHOLDING-removebg-preview.png" alt="LD Holding" className="h-[60px] w-auto object-contain" />
               </div>
-            </div>
-          )}
-          
-          {/* Contenu principal */}
-          <div className={`flex-1 ${isAdmin ? 'lg:ml-64' : ''}`}>
-            {/* Header avec logo et actions (responsive) */}
-            <div className="bg-white shadow-sm sticky top-0 z-20">
-              <div className="px-4 py-3 flex justify-between items-center">
-                <div className="flex items-center gap-2">
-                  <img src="LDHOLDING-removebg-preview.png" alt="LD Holding" className="h-10 w-auto lg:hidden" />
-                  <button onClick={goHome} className="text-slate-600 text-sm font-medium hover:text-slate-900">
-                    {currentView === 'home' ? 'Accueil' : '← Retour'}
-                  </button>
-                </div>
-                <div className="flex items-center gap-2">
-                  {isAdmin && (
-                    <button onClick={() => setShowPrices(!showPrices)} className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition-all active:scale-95 ${showPrices ? 'bg-indigo-600 text-white' : 'bg-slate-200 text-slate-600'}`}>
-                      {showPrices ? 'DZD' : 'DZD̷'}
-                    </button>
-                  )}
-                  <button onClick={toggleAdmin} className={`px-4 py-1 text-xs font-semibold uppercase tracking-wider rounded-lg border transition-all ${isAdmin ? "bg-indigo-600 text-white border-indigo-500" : "bg-white text-slate-600 border-slate-300 hover:bg-slate-50"}`}>
-                    {isAdmin ? "Admin" : "Connexion"}
-                  </button>
-                </div>
+              <div className="flex items-center gap-2">
+                {isAdmin && (
+                  <button onClick={() => setShowPrices(!showPrices)} className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition-all active:scale-95 ${showPrices ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-300'}`} title={showPrices ? "Masquer les prix" : "Afficher les prix"}>{showPrices ? 'DZD' : 'DZD\u0337'}</button>
+                )}
+                <button onClick={toggleAdmin} className={`px-4 py-1 text-[10px] font-semibold uppercase tracking-widest rounded-lg border transition-all ${isAdmin ? "bg-indigo-600 text-white border-indigo-500" : "bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700"}`}>{isAdmin ? "Admin" : "Connexion"}</button>
               </div>
             </div>
             
-            {/* Contenu dynamique */}
-            <div className="p-4 transition-opacity duration-300 ${isTransitioning ? 'opacity-0' : 'opacity-100'}">
-              {/* Section statistiques (uniquement sur desktop et quand on est sur la vue home/client) */}
-              {currentView === 'home' && !isAdmin && (
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                  <div className="bg-white rounded-xl shadow p-4 border border-slate-100">
-                    <div className="text-sm text-slate-500">Marques</div>
-                    <div className="text-2xl font-bold text-slate-800">{safeBrands.length}</div>
-                  </div>
-                  <div className="bg-white rounded-xl shadow p-4 border border-slate-100">
-                    <div className="text-sm text-slate-500">Produits</div>
-                    <div className="text-2xl font-bold text-slate-800">{totalProducts}</div>
-                  </div>
-                  <div className="bg-white rounded-xl shadow p-4 border border-slate-100">
-                    <div className="text-sm text-slate-500">Valeur du stock (est.)</div>
-                    <div className="text-2xl font-bold text-indigo-600">{showPrices ? `${totalStockValue.toFixed(2)} DZD` : '---'}</div>
-                  </div>
-                </div>
-              )}
-              
-              {/* Contenu principal (vue home, admin, marque) */}
-              {currentView === 'home' ? (
-                isAdmin ? (
-                  <div className="grid grid-cols-2 gap-3 lg:hidden">
-                    <button onClick={() => setShowModal(true)} className="min-h-[48px] flex flex-col items-center justify-center gap-1 p-3 bg-slate-800 border border-slate-700 rounded-xl shadow-sm hover:shadow-lg transition-all active:scale-95 text-slate-100 font-medium">
-                      <span className="text-xl">🏷️</span><span className="text-sm">Ajouter une marque</span>
+            {currentView === 'home' ? (isAdmin ? (
+              <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
+                <button onClick={() => setShowModal(true)} className="min-h-[48px] flex flex-col items-center justify-center gap-1 p-3 bg-slate-800 border border-slate-700 rounded-xl shadow-sm hover:shadow-lg hover:shadow-indigo-500/10 transition-all duration-200 active:scale-95 text-slate-100 font-medium"><span className="text-xl">🏷️</span><span className="text-sm">Ajouter une marque</span></button>
+                <button onClick={() => setShowBrandSelect(true)} className="min-h-[48px] flex flex-col items-center justify-center gap-1 p-3 bg-slate-800 border border-slate-700 rounded-xl shadow-sm hover:shadow-lg hover:shadow-indigo-500/10 transition-all duration-200 active:scale-95 text-slate-100 font-medium"><span className="text-xl">📦</span><span className="text-sm">Ajouter un produit</span></button>
+                <button onClick={() => setShowManageModal(true)} className="min-h-[48px] flex flex-col items-center justify-center gap-1 p-3 bg-slate-800 border border-slate-700 rounded-xl shadow-sm hover:shadow-lg hover:shadow-indigo-500/10 transition-all duration-200 active:scale-95 text-slate-100 font-medium"><span className="text-xl">⚙️</span><span className="text-sm">Gérer</span></button>
+                <button onClick={() => setShowDataModal(true)} className="min-h-[48px] flex flex-col items-center justify-center gap-1 p-3 bg-slate-800 border border-slate-700 rounded-xl shadow-sm hover:shadow-lg hover:shadow-indigo-500/10 transition-all duration-200 active:scale-95 text-slate-100 font-medium"><span className="text-xl">📊</span><span className="text-sm">Données</span></button>
+                <button onClick={() => setShowOrdersModal(true)} className="col-span-2 lg:col-span-4 min-h-[48px] flex flex-col items-center justify-center gap-1 p-3 bg-slate-800 border border-slate-700 rounded-xl shadow-sm hover:shadow-lg hover:shadow-indigo-500/10 transition-all duration-200 active:scale-95 text-slate-100 font-medium"><span className="text-xl">📋</span><span className="text-sm">Commandes</span></button>
+                <button onClick={() => setShowImgbbModal(true)} className="col-span-2 lg:col-span-4 min-h-[48px] flex flex-col items-center justify-center gap-1 p-3 bg-slate-800 border border-slate-700 rounded-xl shadow-sm hover:shadow-lg hover:shadow-indigo-500/10 transition-all duration-200 active:scale-95 text-slate-100 font-medium">
+                  <span className="text-xl">🖼️</span>
+                  <span className="text-sm">IMGbank</span>
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-4 lg:grid-cols-4 lg:gap-6">
+                {safeBrands.map(brand => (
+                  <div key={brand.id} className="flex flex-col items-center gap-2">
+                    <button onClick={() => openBrand(brand)} className="w-full aspect-square rounded-[24px] overflow-hidden border border-slate-700 bg-slate-800 shadow-md transition-transform active:scale-95 hover:shadow-lg hover:shadow-indigo-500/20">
+                      {brand.image ? <img src={brand.image} className="w-full h-full object-cover" /> : <div className="w-full h-full bg-slate-700 flex items-center justify-center text-[10px] text-slate-400 font-medium">IMAGE</div>}
                     </button>
-                    <button onClick={() => setShowBrandSelect(true)} className="min-h-[48px] flex flex-col items-center justify-center gap-1 p-3 bg-slate-800 border border-slate-700 rounded-xl shadow-sm hover:shadow-lg transition-all active:scale-95 text-slate-100 font-medium">
-                      <span className="text-xl">📦</span><span className="text-sm">Ajouter un produit</span>
+                    <span className="text-slate-300 font-semibold text-xs tracking-tight bg-slate-800/80 px-2 py-0.5 rounded-full">{brand.name}</span>
+                  </div>
+                ))}
+              </div>
+            )) : (
+              <div className="grid grid-cols-2 gap-4 lg:grid-cols-4 lg:gap-6">
+                {safeSelectedBrand && safeSelectedBrand.products.map(prod => (
+                  <div key={prod.id} className="flex flex-col items-center gap-2 bg-slate-800/50 p-2 rounded-2xl shadow-sm border border-slate-700">
+                    <button onClick={() => openProductModal(prod)} className="w-full aspect-square rounded-[20px] overflow-hidden border border-slate-600 bg-slate-700 active:scale-95 transition-transform">
+                      {prod.image ? <img src={prod.image} className="w-full h-full object-cover" /> : <div className="w-full h-full bg-slate-700 flex items-center justify-center text-[10px] text-slate-400 font-medium">PROD</div>}
                     </button>
-                    <button onClick={() => setShowManageModal(true)} className="min-h-[48px] flex flex-col items-center justify-center gap-1 p-3 bg-slate-800 border border-slate-700 rounded-xl shadow-sm hover:shadow-lg transition-all active:scale-95 text-slate-100 font-medium">
-                      <span className="text-xl">⚙️</span><span className="text-sm">Gérer</span>
+                    <span className="text-slate-200 font-medium text-xs text-center px-1">{prod.name}</span>
+                    {showPrices && <span className="text-indigo-400 font-bold text-sm bg-slate-800 px-3 py-1 rounded-full">{prod.price} DZD</span>}
+                  </div>
+                ))}
+              </div>
+            )}
+            
+            {showPinModal && (
+              <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center p-4 z-50">
+                <div className="bg-slate-800 w-full max-w-[320px] rounded-2xl shadow-2xl p-6 border border-slate-700">
+                  <h2 className="text-xl font-bold text-center text-slate-100 mb-4">Accès administrateur</h2>
+                  <div className="flex justify-center gap-3 mb-6">
+                    {[...Array(6)].map((_, idx) => <div key={idx} className="w-10 h-12 bg-slate-900 rounded-lg border border-slate-600 flex items-center justify-center text-xl font-mono text-slate-300">{idx < pinCode.length ? '●' : ''}</div>)}
+                  </div>
+                  <div className="grid grid-cols-3 gap-3 mb-4">
+                    {[1,2,3,4,5,6,7,8,9].map(d => <button key={d} onClick={() => handlePinDigit(d.toString())} className="h-14 bg-slate-700 rounded-xl text-2xl font-bold text-slate-100 active:scale-95 hover:bg-slate-600">{d}</button>)}
+                    <button onClick={handlePinDelete} className="h-14 bg-slate-700 rounded-xl text-xl font-bold text-slate-100 active:scale-95 hover:bg-slate-600">⌫</button>
+                    <button onClick={() => handlePinDigit('0')} className="h-14 bg-slate-700 rounded-xl text-2xl font-bold text-slate-100 active:scale-95 hover:bg-slate-600">0</button>
+                    <button onClick={() => setShowPinModal(false)} className="h-14 bg-red-900/50 rounded-xl text-sm font-medium text-red-300 active:scale-95 hover:bg-red-800/50">Annuler</button>
+                  </div>
+                </div>
+              </div>
+            )}
+            
+            {!isAdmin && (
+              <div className="fixed bottom-0 left-0 right-0 flex justify-center pointer-events-none z-40">
+                <div className="w-full max-w-[360px] px-4 pb-4 pointer-events-auto">
+                  <div className="relative inline-block">
+                    <button onClick={() => setShowCartModal(true)} className="w-12 h-12 bg-indigo-600 rounded-xl shadow-xl flex items-center justify-center active:scale-95 hover:bg-indigo-500"><span className="text-white text-xl font-bold">🛒</span></button>
+                    {cart.length > 0 && <span className="absolute -top-2 -right-2 bg-emerald-600 text-white text-[10px] font-bold rounded-full w-5 h-5 flex items-center justify-center shadow-md">{cart.reduce((s,i)=>s+i.quantity,0)}</span>}
+                  </div>
+                </div>
+              </div>
+            )}
+            
+            {selectedProduct && !isAdmin && (
+              <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 z-50">
+                <div className="bg-slate-800 w-full max-w-[320px] rounded-3xl overflow-hidden shadow-2xl border border-slate-700">
+                  <div className="aspect-square bg-slate-700">{selectedProduct.image ? <img src={selectedProduct.image} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-slate-400 text-sm">Pas d'image</div>}</div>
+                  <div className="p-5">
+                    <h3 className="text-xl font-bold text-slate-100">{selectedProduct.name}</h3>
+                    {showPrices && <p className="text-slate-400 text-sm mt-1">Prix unitaire : {selectedProduct.price} DZD</p>}
+                    <div className="flex items-center justify-between mt-4">
+                      <span className="text-slate-300 font-medium">Quantité</span>
+                      <div className="flex items-center gap-3">
+                        <button onClick={() => setProductQuantity(Math.max(1, productQuantity-1))} className="w-8 h-8 bg-slate-700 rounded-full font-bold text-slate-200 active:scale-95">-</button>
+                        <span className="w-8 text-center font-semibold text-slate-100">{productQuantity}</span>
+                        <button onClick={() => setProductQuantity(productQuantity+1)} className="w-8 h-8 bg-slate-700 rounded-full font-bold text-slate-200 active:scale-95">+</button>
+                      </div>
+                    </div>
+                    <button onClick={addToCart} className="w-full mt-6 py-3 bg-indigo-600 text-white rounded-xl font-bold active:scale-95 hover:bg-indigo-500">
+                      Ajouter au panier {showPrices && `· ${(selectedProduct.price * productQuantity).toFixed(2)} DZD`}
                     </button>
-                    <button onClick={() => setShowDataModal(true)} className="min-h-[48px] flex flex-col items-center justify-center gap-1 p-3 bg-slate-800 border border-slate-700 rounded-xl shadow-sm hover:shadow-lg transition-all active:scale-95 text-slate-100 font-medium">
-                      <span className="text-xl">📊</span><span className="text-sm">Données</span>
-                    </button>
-                    <button onClick={() => setShowOrdersModal(true)} className="col-span-2 min-h-[48px] flex flex-col items-center justify-center gap-1 p-3 bg-slate-800 border border-slate-700 rounded-xl shadow-sm hover:shadow-lg transition-all active:scale-95 text-slate-100 font-medium">
-                      <span className="text-xl">📋</span><span className="text-sm">Commandes</span>
-                    </button>
-                    <button onClick={() => setShowImgbbModal(true)} className="col-span-2 min-h-[48px] flex flex-col items-center justify-center gap-1 p-3 bg-slate-800 border border-slate-700 rounded-xl shadow-sm hover:shadow-lg transition-all active:scale-95 text-slate-100 font-medium">
-                      <span className="text-xl">🖼️</span><span className="text-sm">IMGbank</span>
-                    </button>
+                    <button onClick={() => setSelectedProduct(null)} className="w-full mt-3 py-2 bg-slate-700 text-slate-300 rounded-xl text-sm active:scale-95 hover:bg-slate-600">Fermer</button>
                   </div>
-                ) : (
-                  <div className="grid grid-cols-2 gap-4">
-                    {safeBrands.map(brand => (
-                      <div key={brand.id} className="flex flex-col items-center gap-2">
-                        <button onClick={() => openBrand(brand)} className="w-full aspect-square rounded-2xl overflow-hidden border border-slate-200 bg-white shadow-sm transition-transform active:scale-95 hover:shadow-md">
-                          {brand.image ? <img src={brand.image} className="w-full h-full object-cover" /> : <div className="w-full h-full bg-slate-100 flex items-center justify-center text-xs text-slate-400 font-medium">IMAGE</div>}
-                        </button>
-                        <span className="text-slate-700 font-semibold text-xs tracking-tight bg-slate-100 px-2 py-0.5 rounded-full">{brand.name}</span>
-                      </div>
-                    ))}
-                  </div>
-                )
-              ) : (
-                // Vue d'une marque (produits) – grille responsive
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                  {safeSelectedBrand && safeSelectedBrand.products.map(prod => (
-                    <div key={prod.id} className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden hover:shadow-xl transition-all duration-200 flex flex-col">
-                      <button onClick={() => openProductModal(prod)} className="block w-full aspect-square overflow-hidden bg-slate-100">
-                        {prod.image ? <img src={prod.image} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-slate-400 text-sm">PROD</div>}
-                      </button>
-                      <div className="p-3 flex-1 flex flex-col">
-                        <span className="text-slate-800 font-medium text-sm line-clamp-2">{prod.name}</span>
-                        {showPrices && <span className="mt-2 text-indigo-600 font-bold text-base">{prod.price} DZD</span>}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-          
-          {/* Modales (inchangées) – je ne les répète pas ici pour la lisibilité, mais elles sont présentes dans le code final complet */}
-          {showPinModal && (
-            <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center p-4 z-50">
-              <div className="bg-slate-800 w-full max-w-[320px] rounded-2xl shadow-2xl p-6 border border-slate-700">
-                <h2 className="text-xl font-bold text-center text-slate-100 mb-4">Accès administrateur</h2>
-                <div className="flex justify-center gap-3 mb-6">
-                  {[...Array(6)].map((_, idx) => <div key={idx} className="w-10 h-12 bg-slate-900 rounded-lg border border-slate-600 flex items-center justify-center text-xl font-mono text-slate-300">{idx < pinCode.length ? '●' : ''}</div>)}
-                </div>
-                <div className="grid grid-cols-3 gap-3 mb-4">
-                  {[1,2,3,4,5,6,7,8,9].map(d => <button key={d} onClick={() => handlePinDigit(d.toString())} className="h-14 bg-slate-700 rounded-xl text-2xl font-bold text-slate-100 active:scale-95 hover:bg-slate-600">{d}</button>)}
-                  <button onClick={handlePinDelete} className="h-14 bg-slate-700 rounded-xl text-xl font-bold text-slate-100 active:scale-95 hover:bg-slate-600">⌫</button>
-                  <button onClick={() => handlePinDigit('0')} className="h-14 bg-slate-700 rounded-xl text-2xl font-bold text-slate-100 active:scale-95 hover:bg-slate-600">0</button>
-                  <button onClick={() => setShowPinModal(false)} className="h-14 bg-red-900/50 rounded-xl text-sm font-medium text-red-300 active:scale-95 hover:bg-red-800/50">Annuler</button>
                 </div>
               </div>
-            </div>
-          )}
-          
-          {!isAdmin && (
-            <div className="fixed bottom-6 right-6 z-40">
-              <button onClick={() => setShowCartModal(true)} className="w-14 h-14 bg-indigo-600 rounded-full shadow-xl flex items-center justify-center active:scale-95 hover:bg-indigo-500 transition-all">
-                <span className="text-white text-2xl font-bold">🛒</span>
-                {cart.length > 0 && (
-                  <span className="absolute -top-2 -right-2 bg-emerald-500 text-white text-xs font-bold rounded-full w-6 h-6 flex items-center justify-center shadow-md">
-                    {cart.reduce((s,i)=>s+i.quantity,0)}
-                  </span>
-                )}
-              </button>
-            </div>
-          )}
-          
-          {selectedProduct && !isAdmin && (
-            <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 z-50">
-              <div className="bg-white w-full max-w-md rounded-2xl overflow-hidden shadow-2xl">
-                <div className="aspect-square bg-slate-100">{selectedProduct.image ? <img src={selectedProduct.image} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-slate-400">Pas d'image</div>}</div>
-                <div className="p-5">
-                  <h3 className="text-xl font-bold text-slate-800">{selectedProduct.name}</h3>
-                  {showPrices && <p className="text-slate-500 text-sm mt-1">Prix unitaire : {selectedProduct.price} DZD</p>}
-                  <div className="flex items-center justify-between mt-4">
-                    <span className="text-slate-600 font-medium">Quantité</span>
-                    <div className="flex items-center gap-3">
-                      <button onClick={() => setProductQuantity(Math.max(1, productQuantity-1))} className="w-8 h-8 bg-slate-100 rounded-full font-bold text-slate-600 active:scale-95">-</button>
-                      <span className="w-8 text-center font-semibold">{productQuantity}</span>
-                      <button onClick={() => setProductQuantity(productQuantity+1)} className="w-8 h-8 bg-slate-100 rounded-full font-bold text-slate-600 active:scale-95">+</button>
-                    </div>
-                  </div>
-                  <button onClick={addToCart} className="w-full mt-6 py-3 bg-indigo-600 text-white rounded-xl font-bold active:scale-95">
-                    Ajouter au panier {showPrices && `· ${(selectedProduct.price * productQuantity).toFixed(2)} DZD`}
-                  </button>
-                  <button onClick={() => setSelectedProduct(null)} className="w-full mt-3 py-2 bg-slate-100 text-slate-600 rounded-xl text-sm active:scale-95">Fermer</button>
-                </div>
-              </div>
-            </div>
-          )}
-          
-          {showCartModal && !isAdmin && (
-            <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-              <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl max-h-[80vh] flex flex-col">
-                <div className="p-4 border-b flex justify-between items-center"><h2 className="text-lg font-bold">Mon panier</h2><button onClick={() => setShowCartModal(false)} className="text-slate-400 text-2xl">&times;</button></div>
-                <div className="flex-1 overflow-y-auto p-4">
-                  {cart.length === 0 ? <p className="text-center text-slate-400 py-8">Votre panier est vide</p> : (
-                    <div className="space-y-3">
-                      {cart.map((item, idx) => (
-                        <div key={idx} className="flex gap-3 items-center border-b pb-3">
-                          <div className="w-12 h-12 bg-slate-100 rounded-lg overflow-hidden flex-shrink-0">{item.product.image ? <img src={item.product.image} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-[8px]">img</div>}</div>
-                          <div className="flex-1">
-                            <p className="font-semibold text-sm">{item.product.name}</p>
-                            <p className="text-slate-500 text-xs">{item.brandName} · {item.quantity} × {showPrices ? `${item.product.price} DZD` : '•••'}</p>
-                            {showPrices && <p className="text-indigo-600 text-xs font-bold">{(item.product.price * item.quantity).toFixed(2)} DZD</p>}
-                          </div>
-                          <button onClick={() => removeFromCart(idx)} className="w-8 h-8 bg-red-100 text-red-600 rounded-full font-bold active:scale-95">✕</button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                {cart.length > 0 && (
-                  <div className="p-4 border-t">
-                    {showPrices && <div className="flex justify-between font-bold mb-3"><span>Total</span><span className="text-indigo-600">{cartTotal.toFixed(2)} DZD</span></div>}
-                    <button onClick={openDeliveryModal} className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold active:scale-95">Valider la commande</button>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-          
-          {showDeliveryModal && !isAdmin && (
-            <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-              <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl p-6">
-                <h2 className="text-xl font-bold mb-4">Livraison</h2>
-                <div className="space-y-3">
-                  <input type="text" placeholder="Nom / Entreprise *" className="w-full p-3 bg-slate-50 rounded-xl border focus:border-indigo-500" value={deliveryInfo.name} onChange={e => setDeliveryInfo({...deliveryInfo, name: e.target.value})} />
-                  <input type="tel" placeholder="Téléphone" className="w-full p-3 bg-slate-50 rounded-xl border" value={deliveryInfo.phone} onChange={e => setDeliveryInfo({...deliveryInfo, phone: e.target.value})} />
-                  <input type="text" placeholder="Adresse *" className="w-full p-3 bg-slate-50 rounded-xl border" value={deliveryInfo.address} onChange={e => setDeliveryInfo({...deliveryInfo, address: e.target.value})} />
-                  <textarea placeholder="Instructions" className="w-full p-3 bg-slate-50 rounded-xl border resize-none" rows="2" value={deliveryInfo.instructions} onChange={e => setDeliveryInfo({...deliveryInfo, instructions: e.target.value})} />
-                </div>
-                <div className="flex gap-3 mt-6"><button onClick={() => setShowDeliveryModal(false)} className="flex-1 py-3 bg-slate-100 rounded-xl font-medium">Annuler</button><button onClick={validateOrder} className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-bold">Valider</button></div>
-              </div>
-            </div>
-          )}
-          
-          {showOrdersModal && isAdmin && (
-            <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-              <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl max-h-[85vh] flex flex-col">
-                <div className="p-4 border-b flex justify-between items-center"><h2 className="text-lg font-bold">Commandes</h2><button onClick={() => setShowOrdersModal(false)} className="text-slate-400 text-2xl">&times;</button></div>
-                <div className="flex border-b">
-                  <button onClick={() => setOrdersActiveTab("new")} className={`flex-1 py-3 text-sm font-medium ${ordersActiveTab==="new"?"text-indigo-600 border-b-2 border-indigo-600":"text-slate-500"}`}>Nouvelles ({newOrders.length})</button>
-                  <button onClick={() => setOrdersActiveTab("processed")} className={`flex-1 py-3 text-sm font-medium ${ordersActiveTab==="processed"?"text-indigo-600 border-b-2 border-indigo-600":"text-slate-500"}`}>Traitées ({processedOrders.length})</button>
-                  <button onClick={() => setOrdersActiveTab("delivered")} className={`flex-1 py-3 text-sm font-medium ${ordersActiveTab==="delivered"?"text-indigo-600 border-b-2 border-indigo-600":"text-slate-500"}`}>Livrées ({deliveredOrders.length})</button>
-                </div>
-                <div className="flex-1 overflow-y-auto p-4">
-                  {ordersActiveTab === "new" && (newOrders.length===0?<p className="text-center text-slate-400 py-4">Aucune nouvelle commande</p>:newOrders.map(order=>(
-                    <div key={order.id} className="mb-4 p-3 bg-slate-50 rounded-xl border">
-                      <div className="text-xs text-slate-400 mb-1">{order.timestamp}</div>
-                      <div className="font-semibold">{order.delivery.name}</div>
-                      <div className="text-sm text-slate-600">{order.delivery.address}</div>
-                      {order.delivery.phone && <div className="text-sm">📞 {order.delivery.phone}</div>}
-                      {order.delivery.instructions && <div className="text-xs italic mt-1">📝 {order.delivery.instructions}</div>}
-                      <div className="mt-2 space-y-1">
-                        {order.items.map((item,idx)=>(
-                          <div key={idx} className="flex justify-between text-sm"><span>{item.quantity}× {item.product.name}</span>{showPrices?<span>{(item.product.price*item.quantity).toFixed(2)} DZD</span>:<span>•••</span>}</div>
-                        ))}
-                      </div>
-                      <div className="flex justify-between items-center mt-2 pt-2 border-t">
-                        {showPrices?<span className="font-bold">Total : {order.total.toFixed(2)} DZD</span>:<span className="font-bold">Total : •••</span>}
-                        <button onClick={()=>requestConfirm("update",{orderId:order.id,newStatus:"processed"},()=>updateOrderStatus(order.id,"processed"))} className="px-3 py-1 bg-indigo-600 text-white rounded-lg text-xs font-bold">Marquer traitée</button>
-                      </div>
-                    </div>
-                  )))}
-                  {ordersActiveTab === "processed" && (processedOrders.length===0?<p className="text-center text-slate-400 py-4">Aucune commande traitée</p>:processedOrders.map(order=>(
-                    <div key={order.id} className="mb-4 p-3 bg-slate-50 rounded-xl border">
-                      <div className="text-xs text-slate-400 mb-1">{order.timestamp}</div>
-                      <div className="font-semibold">{order.delivery.name}</div>
-                      <div className="text-sm text-slate-600">{order.delivery.address}</div>
-                      {order.delivery.phone && <div className="text-sm">📞 {order.delivery.phone}</div>}
-                      {order.delivery.instructions && <div className="text-xs italic mt-1">📝 {order.delivery.instructions}</div>}
-                      <div className="mt-2 space-y-1">
-                        {order.items.map((item,idx)=>(
-                          <div key={idx} className="flex justify-between text-sm"><span>{item.quantity}× {item.product.name}</span>{showPrices?<span>{(item.product.price*item.quantity).toFixed(2)} DZD</span>:<span>•••</span>}</div>
-                        ))}
-                      </div>
-                      <div className="flex justify-between items-center mt-2 pt-2 border-t">
-                        {showPrices?<span className="font-bold">Total : {order.total.toFixed(2)} DZD</span>:<span className="font-bold">Total : •••</span>}
-                        <button onClick={()=>requestConfirm("update",{orderId:order.id,newStatus:"delivered"},()=>updateOrderStatus(order.id,"delivered"))} className="px-3 py-1 bg-indigo-600 text-white rounded-lg text-xs font-bold">Marquer livrée</button>
-                      </div>
-                    </div>
-                  )))}
-                  {ordersActiveTab === "delivered" && (
-                    <div>
-                      <div className="flex justify-end gap-2 mb-3">
-                        <button onClick={cleanOldOrders} className="px-3 py-1 bg-yellow-500 text-white rounded-lg text-xs font-bold">Nettoyer (3 mois)</button>
-                        <button onClick={exportDeliveredHistory} className="px-3 py-1 bg-indigo-600 text-white rounded-lg text-xs font-bold">Historique (CSV)</button>
-                        <button onClick={clearDeliveredHistory} className="px-3 py-1 bg-red-600 text-white rounded-lg text-xs font-bold">Tout vider</button>
-                      </div>
-                      {deliveredOrders.length === 0 ? <p className="text-center text-slate-400 py-4">Aucune commande livrée</p> : deliveredOrders.map(order=>(
-                        <div key={order.id} className="mb-4 p-3 bg-slate-50 rounded-xl border opacity-75">
-                          <div className="text-xs text-slate-400 mb-1">{order.timestamp}</div>
-                          <div className="font-semibold">{order.delivery.name}</div>
-                          <div className="text-sm text-slate-600">{order.delivery.address}</div>
-                          {order.delivery.phone && <div className="text-sm">📞 {order.delivery.phone}</div>}
-                          {order.delivery.instructions && <div className="text-xs italic mt-1">📝 {order.delivery.instructions}</div>}
-                          <div className="mt-2 space-y-1">
-                            {order.items.map((item,idx)=>(
-                              <div key={idx} className="flex justify-between text-sm"><span>{item.quantity}× {item.product.name}</span>{showPrices?<span>{(item.product.price*item.quantity).toFixed(2)} DZD</span>:<span>•••</span>}</div>
-                            ))}
-                          </div>
-                          <div className="flex justify-between items-center mt-2 pt-2 border-t">
-                            {showPrices?<span className="font-bold">Total : {order.total.toFixed(2)} DZD</span>:<span className="font-bold">Total : •••</span>}
-                            <span className="text-xs text-green-600">Livrée</span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-          
-          {showDataModal && isAdmin && (
-            <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-              <div className="bg-white w-full max-w-md rounded-2xl p-6 shadow-2xl">
-                <div className="flex justify-between items-center mb-4"><h2 className="text-lg font-bold">Gestion des données</h2><button onClick={()=>{setShowDataModal(false); setPreviewData(null);}} className="text-slate-400 text-2xl">&times;</button></div>
-                {!previewData ? (
-                  <div className="space-y-3">
-                    <button onClick={exportToExcel} className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold">Exporter tout l'inventaire (Excel)</button>
-                    <label className="w-full py-3 text-center rounded-xl font-bold bg-indigo-600 text-white cursor-pointer">Choisir un fichier Excel à importer
-                      <input type="file" className="hidden" accept=".xlsx,.xls,.csv" onChange={(e)=>{ if(e.target.files[0]) analyzeImportFile(e.target.files[0]); e.target.value=''; }} />
-                    </label>
-                    <button onClick={() => setShowBatchModal(true)} className="w-full py-3 bg-green-600 text-white rounded-xl font-bold">📦 Lot de produits</button>
-                  </div>
-                ) : (
-                  <div>
-                    <div className="bg-slate-100 p-3 rounded-lg mb-4">
-                      <p className="text-sm font-semibold">Prévisualisation :</p>
-                      <p className="text-xs">{previewData.totalProducts} produits détectés dans {previewData.totalBrands} marques</p>
-                      {previewData.errors.length>0 && <p className="text-xs text-red-500">{previewData.errors.length} erreurs de données</p>}
-                    </div>
-                    <div className="flex gap-3">
-                      <button onClick={cancelPreview} disabled={isImporting} className="flex-1 py-2 bg-slate-200 rounded-xl font-medium">Annuler</button>
-                      <button onClick={confirmImport} disabled={isImporting} className="flex-1 py-2 bg-indigo-600 text-white rounded-xl font-bold">Confirmer l'importation</button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-          
-          {showBatchModal && (
-            <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-              <div className="bg-white w-full max-w-md rounded-2xl p-6 shadow-2xl">
-                <div className="flex justify-between items-center mb-4"><h2 className="text-lg font-bold">Import de produits par lot</h2><button onClick={() => setShowBatchModal(false)} className="text-slate-400 text-2xl">&times;</button></div>
-                <label className="text-xs uppercase font-bold">Choisir la marque cible</label>
-                <select value={selectedBrandForBatch || ""} onChange={(e) => setSelectedBrandForBatch(e.target.value ? parseInt(e.target.value) : null)} className="w-full p-2 mb-4 bg-slate-100 rounded-lg border text-sm" disabled={isUploadingBatch}>
-                  <option value="">-- Sélectionner une marque --</option>
-                  {safeBrands.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-                </select>
-                {isUploadingBatch && batchProgress.total > 0 && (
-                  <div className="mb-4">
-                    <div className="flex justify-between text-xs mb-1"><span>Progression</span><span>{batchProgress.current} / {batchProgress.total}</span></div>
-                    <div className="w-full bg-slate-200 rounded-full h-2"><div className="bg-indigo-600 h-2 rounded-full transition-all" style={{ width: `${(batchProgress.current / batchProgress.total) * 100}%` }}></div></div>
-                    <p className="text-xs mt-2">{batchProgress.status}</p>
-                  </div>
-                )}
-                <label className={`w-full py-3 text-center rounded-xl font-bold ${!selectedBrandForBatch || isUploadingBatch ? 'bg-slate-200 text-slate-400 cursor-not-allowed' : 'bg-blue-600 text-white cursor-pointer'}`}>
-                  {isUploadingBatch ? 'Traitement en cours...' : 'Choisir les images (produits)'}
-                  <input type="file" className="hidden" accept="image/*" multiple disabled={!selectedBrandForBatch || isUploadingBatch} onChange={(e)=>{ if(e.target.files.length) handleBatchProductUpload(Array.from(e.target.files)); e.target.value=''; }} />
-                </label>
-                <button onClick={() => setShowBatchModal(false)} className="w-full mt-4 py-2 bg-slate-200 rounded-xl font-medium">Annuler</button>
-              </div>
-            </div>
-          )}
-          
-          {showImgbbModal && (
-            <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-              <div className="bg-white w-full max-w-md rounded-2xl p-6 shadow-2xl">
-                <div className="flex justify-between items-center mb-4"><h2 className="text-lg font-bold">Configuration ImgBB</h2><button onClick={() => setShowImgbbModal(false)} className="text-slate-400 text-2xl">&times;</button></div>
-                <label className="text-xs uppercase font-bold">Clé API ImgBB</label>
-                <input type="text" className="w-full p-2 mb-4 bg-slate-100 rounded-lg border" placeholder="Entrez votre clé API ImgBB" value={imgbbApiKey} onChange={(e) => setImgbbApiKey(e.target.value)} />
-                <div className="flex gap-3"><button onClick={() => setShowImgbbModal(false)} className="flex-1 py-2 bg-slate-200 rounded-xl font-medium">Annuler</button><button onClick={saveImgbbKey} className="flex-1 py-2 bg-indigo-600 text-white rounded-xl font-bold">Enregistrer</button></div>
-              </div>
-            </div>
-          )}
-          
-          {(showModal || showProductModal || showBrandSelect || showManageModal || editingBrand) && (
-            <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-              <div className="bg-white w-full max-w-md rounded-2xl p-6 shadow-2xl overflow-y-auto max-h-[85vh]">
-                <div className="flex justify-end"><button onClick={()=>{ setShowModal(false); setShowProductModal(false); setShowBrandSelect(false); setShowManageModal(false); setEditingBrand(null); setEditingProduct(null); }} className="text-slate-400 text-2xl">&times;</button></div>
-                {editingBrand && (
-                  <>
-                    <h2 className="font-bold text-lg mb-4">Modifier Marque</h2>
-                    <label className="text-xs uppercase font-bold">Nom</label>
-                    <input type="text" className="w-full p-2 mb-3 bg-slate-100 rounded-lg" value={editingBrand.name} onChange={e=>setEditingBrand({...editingBrand, name:e.target.value})} />
-                    <FileInput onFileSelect={(file) => setEditingBrand({...editingBrand, imageFile: file})} label="Nouvelle image (optionnel)" />
-                    <div className="flex gap-3 mt-4"><button onClick={()=>setEditingBrand(null)} className="flex-1 py-2 bg-slate-200 rounded-xl">Annuler</button><button onClick={()=>requestConfirm("saveBrand",null,saveBrandEdit)} className="flex-1 py-2 bg-indigo-600 text-white rounded-xl">Enregistrer</button></div>
-                  </>
-                )}
-                {showModal && !editingBrand && (
-                  <>
-                    <h2 className="font-bold text-lg mb-4">Nouvelle Marque</h2>
-                    <label className="text-xs uppercase font-bold">Nom</label>
-                    <input type="text" className="w-full p-2 mb-3 bg-slate-100 rounded-lg" value={newBrand.name} onChange={e=>setNewBrand({...newBrand, name:e.target.value})} />
-                    <FileInput onFileSelect={(file) => setNewBrand({...newBrand, imageFile: file})} label="Image (optionnel)" />
-                    <div className="flex gap-3 mt-4"><button onClick={()=>setShowModal(false)} className="flex-1 py-2 bg-slate-200 rounded-xl">Annuler</button><button onClick={()=>requestConfirm("addBrand",null,addBrand)} className="flex-1 py-2 bg-indigo-600 text-white rounded-xl">Créer</button></div>
-                  </>
-                )}
-                {showManageModal && !editingBrand && (
-                  <>
-                    <h2 className="font-bold text-lg mb-4">Gestion</h2>
-                    {safeBrands.map(b => (
-                      <div key={b.id} className="mb-3">
-                        <button onClick={()=>setManageSelectedBrand(manageSelectedBrand===b.id?null:b.id)} className="w-full p-3 bg-slate-100 rounded-xl text-left font-semibold">{b.name}</button>
-                        {manageSelectedBrand===b.id && (
-                          <div className="mt-2 pl-4">
-                            <div className="flex gap-2 mb-3">
-                              <button onClick={()=>requestConfirm("deleteBrand",{brandId:b.id},()=>deleteBrand(b.id))} className="px-3 py-1 bg-red-100 text-red-600 rounded-lg text-xs font-bold">Supprimer</button>
-                              <button onClick={()=>setEditingBrand(b)} className="px-3 py-1 bg-slate-200 rounded-lg text-xs font-bold">Modifier</button>
+            )}
+            
+            {showCartModal && !isAdmin && (
+              <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+                <div className="bg-slate-800 w-full max-w-[340px] rounded-2xl shadow-2xl max-h-[80vh] flex flex-col border border-slate-700">
+                  <div className="p-4 border-b border-slate-700 flex justify-between items-center"><h2 className="text-lg font-bold text-slate-100">Mon panier</h2><button onClick={() => setShowCartModal(false)} className="text-slate-400 text-2xl hover:text-slate-200">&times;</button></div>
+                  <div className="flex-1 overflow-y-auto p-4">
+                    {cart.length === 0 ? <p className="text-center text-slate-400 py-8">Votre panier est vide</p> : (
+                      <div className="space-y-3">
+                        {cart.map((item, idx) => (
+                          <div key={idx} className="flex gap-3 items-center border-b border-slate-700 pb-3">
+                            <div className="w-12 h-12 bg-slate-700 rounded-lg overflow-hidden flex-shrink-0">{item.product.image ? <img src={item.product.image} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-[8px] text-slate-500">img</div>}</div>
+                            <div className="flex-1">
+                              <p className="font-semibold text-slate-100 text-sm">{item.product.name}</p>
+                              <p className="text-slate-400 text-xs">{item.brandName} · {item.quantity} × {showPrices ? `${item.product.price} DZD` : ''}</p>
+                              {showPrices && <p className="text-indigo-400 text-xs font-bold">{(item.product.price * item.quantity).toFixed(2)} DZD</p>}
                             </div>
-                            {b.products.map(p => (
-                              <div key={p.id} className="flex items-center gap-2 mb-2">
-                                <button onClick={() => setEditingProduct(editingProduct?.id === p.id ? null : p)} className="flex-1 p-2 bg-white border rounded-lg text-left text-sm">{p.name}</button>
-                                <button onClick={() => requestConfirm("deleteProduct", { brandId: b.id, productId: p.id }, () => deleteProduct(b.id, p.id))} className="w-8 h-8 bg-red-100 text-red-600 rounded-full">✕</button>
+                            <button onClick={() => removeFromCart(idx)} className="w-8 h-8 bg-red-900/50 text-red-300 rounded-full font-bold active:scale-95 hover:bg-red-800/50">✕</button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  {cart.length > 0 && (
+                    <div className="p-4 border-t border-slate-700">
+                      {showPrices && <div className="flex justify-between font-bold text-slate-100 mb-3"><span>Total</span><span className="text-indigo-400">{cartTotal.toFixed(2)} DZD</span></div>}
+                      <button onClick={openDeliveryModal} className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold active:scale-95 hover:bg-indigo-500">Valider la commande</button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+            
+            {showDeliveryModal && !isAdmin && (
+              <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+                <div className="bg-slate-800 w-full max-w-[340px] rounded-2xl shadow-2xl p-6 border border-slate-700">
+                  <h2 className="text-xl font-bold text-slate-100 mb-4">Livraison</h2>
+                  <div className="space-y-3">
+                    <input type="text" autoComplete="off" placeholder="Nom / Entreprise *" className="w-full p-3 bg-slate-900 rounded-xl border border-slate-700 outline-none focus:border-indigo-500 text-slate-100 placeholder:text-slate-500" value={deliveryInfo.name} onChange={e => setDeliveryInfo({...deliveryInfo, name: e.target.value})} />
+                    <input type="tel" autoComplete="off" placeholder="Téléphone" className="w-full p-3 bg-slate-900 rounded-xl border border-slate-700 outline-none focus:border-indigo-500 text-slate-100 placeholder:text-slate-500" value={deliveryInfo.phone} onChange={e => setDeliveryInfo({...deliveryInfo, phone: e.target.value})} />
+                    <input type="text" autoComplete="off" placeholder="Adresse *" className="w-full p-3 bg-slate-900 rounded-xl border border-slate-700 outline-none focus:border-indigo-500 text-slate-100 placeholder:text-slate-500" value={deliveryInfo.address} onChange={e => setDeliveryInfo({...deliveryInfo, address: e.target.value})} />
+                    <textarea placeholder="Commentaire / instructions" className="w-full p-3 bg-slate-900 rounded-xl border border-slate-700 outline-none focus:border-indigo-500 text-slate-100 placeholder:text-slate-500 resize-none" rows="2" value={deliveryInfo.instructions} onChange={e => setDeliveryInfo({...deliveryInfo, instructions: e.target.value})} />
+                  </div>
+                  <div className="flex gap-3 mt-6"><button onClick={() => setShowDeliveryModal(false)} className="flex-1 py-3 bg-slate-700 rounded-xl font-medium text-slate-200 active:scale-95 hover:bg-slate-600">Annuler</button><button onClick={validateOrder} className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-bold active:scale-95 hover:bg-indigo-500">Valider</button></div>
+                </div>
+              </div>
+            )}
+            
+            {showOrdersModal && isAdmin && (
+              <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+                <div className="bg-slate-800 w-full max-w-[340px] rounded-2xl shadow-2xl max-h-[85vh] flex flex-col border border-slate-700">
+                  <div className="p-4 border-b border-slate-700 flex justify-between items-center"><h2 className="text-lg font-bold text-slate-100">Commandes</h2><button onClick={() => setShowOrdersModal(false)} className="text-slate-400 text-2xl hover:text-slate-200">&times;</button></div>
+                  <div className="flex border-b border-slate-700">
+                    <button onClick={() => setOrdersActiveTab("new")} className={`flex-1 py-3 text-xs font-medium ${ordersActiveTab==="new"?"text-indigo-400 border-b-2 border-indigo-400":"text-slate-400"}`}>Nouvelles ({newOrders.length})</button>
+                    <button onClick={() => setOrdersActiveTab("processed")} className={`flex-1 py-3 text-xs font-medium ${ordersActiveTab==="processed"?"text-indigo-400 border-b-2 border-indigo-400":"text-slate-400"}`}>Traitées ({processedOrders.length})</button>
+                    <button onClick={() => setOrdersActiveTab("delivered")} className={`flex-1 py-3 text-xs font-medium ${ordersActiveTab==="delivered"?"text-indigo-400 border-b-2 border-indigo-400":"text-slate-400"}`}>Livrées ({deliveredOrders.length})</button>
+                  </div>
+                  <div className="flex-1 overflow-y-auto p-3">
+                    {ordersActiveTab === "new" && (newOrders.length===0?<p className="text-center text-slate-400 py-4">Aucune nouvelle commande</p>:newOrders.map(order=>{
+                      const safeItems = Array.isArray(order.items) ? order.items : [];
+                      return (
+                        <div key={order.id} className="mb-4 p-3 bg-slate-700/50 rounded-xl border border-slate-600">
+                          <div className="text-xs text-slate-400 mb-1">{order.timestamp}</div>
+                          <div className="font-semibold text-slate-100">{order.delivery?.name || 'Nom inconnu'}</div>
+                          <div className="text-xs text-slate-300">{order.delivery?.address || ''}</div>
+                          {order.delivery?.phone && <div className="text-xs text-slate-300">📞 {order.delivery.phone}</div>}
+                          {order.delivery?.instructions && <div className="text-xs italic text-slate-400 mt-1">📝 {order.delivery.instructions}</div>}
+                          <div className="mt-2 space-y-1">
+                            {safeItems.map((item,idx)=>(
+                              <div key={idx} className="flex justify-between text-xs text-slate-300">
+                                <span>{item.quantity}× {item.product?.name || 'Produit supprimé'}</span>
+                                {showPrices && item.product?.price ? <span>{(item.product.price * item.quantity).toFixed(2)} DZD</span> : <span>•••</span>}
                               </div>
                             ))}
-                            {editingProduct && editingProduct.id === p?.id && (
-                              <div className="p-3 mt-2 bg-slate-50 rounded-xl">
-                                <label className="text-xs font-bold">Nom</label><input type="text" value={editingProduct.name} className="w-full p-1 mb-1 bg-white rounded border" onChange={e => setEditingProduct({...editingProduct, name: e.target.value})} />
-                                <label className="text-xs font-bold">Quantité</label><input type="number" value={editingProduct.qty} className="w-full p-1 mb-1 bg-white rounded border" onChange={e => setEditingProduct({...editingProduct, qty: e.target.value})} />
-                                <label className="text-xs font-bold">Prix</label><input type="number" value={editingProduct.price} className="w-full p-1 mb-2 bg-white rounded border" onChange={e => setEditingProduct({...editingProduct, price: e.target.value})} />
-                                <FileInput onFileSelect={(file) => setEditingProduct({...editingProduct, imageFile: file})} label="Nouvelle image" />
-                                <div className="flex gap-2 mt-2"><button onClick={() => setEditingProduct(null)} className="flex-1 py-1 bg-slate-200 rounded">Annuler</button><button onClick={() => requestConfirm("saveProduct", null, saveProductEdit)} className="flex-1 py-1 bg-indigo-600 text-white rounded">Enregistrer</button></div>
-                              </div>
-                            )}
                           </div>
-                        )}
+                          <div className="flex justify-between items-center mt-2 pt-2 border-t border-slate-600">
+                            {showPrices ? <span className="font-bold text-indigo-400">Total : {order.total?.toFixed(2) || '0.00'} DZD</span> : <span className="font-bold text-slate-400">Total : •••</span>}
+                            <button onClick={()=>requestConfirm("update",{orderId:order.id,newStatus:"processed"},()=>updateOrderStatus(order.id,"processed"))} className="px-3 py-1 bg-indigo-600 text-white rounded-lg text-xs font-bold">Marquer traitée</button>
+                          </div>
+                        </div>
+                      );
+                    }))}
+                    {ordersActiveTab === "processed" && (processedOrders.length===0?<p className="text-center text-slate-400 py-4">Aucune commande traitée</p>:processedOrders.map(order=>{
+                      const safeItems = Array.isArray(order.items) ? order.items : [];
+                      return (
+                        <div key={order.id} className="mb-4 p-3 bg-slate-700/50 rounded-xl border border-slate-600">
+                          <div className="text-xs text-slate-400 mb-1">{order.timestamp}</div>
+                          <div className="font-semibold text-slate-100">{order.delivery?.name || 'Nom inconnu'}</div>
+                          <div className="text-xs text-slate-300">{order.delivery?.address || ''}</div>
+                          {order.delivery?.phone && <div className="text-xs text-slate-300">📞 {order.delivery.phone}</div>}
+                          {order.delivery?.instructions && <div className="text-xs italic text-slate-400 mt-1">📝 {order.delivery.instructions}</div>}
+                          <div className="mt-2 space-y-1">
+                            {safeItems.map((item,idx)=>(
+                              <div key={idx} className="flex justify-between text-xs text-slate-300">
+                                <span>{item.quantity}× {item.product?.name || 'Produit supprimé'}</span>
+                                {showPrices && item.product?.price ? <span>{(item.product.price * item.quantity).toFixed(2)} DZD</span> : <span>•••</span>}
+                              </div>
+                            ))}
+                          </div>
+                          <div className="flex justify-between items-center mt-2 pt-2 border-t border-slate-600">
+                            {showPrices ? <span className="font-bold text-indigo-400">Total : {order.total?.toFixed(2) || '0.00'} DZD</span> : <span className="font-bold text-slate-400">Total : •••</span>}
+                            <button onClick={()=>requestConfirm("update",{orderId:order.id,newStatus:"delivered"},()=>updateOrderStatus(order.id,"delivered"))} className="px-3 py-1 bg-indigo-600 text-white rounded-lg text-xs font-bold">Marquer livrée</button>
+                          </div>
+                        </div>
+                      );
+                    }))}
+                    {ordersActiveTab === "delivered" && (
+                      <div>
+                        <div className="flex justify-end gap-2 mb-3">
+                          <button onClick={cleanOldOrders} className="px-3 py-1 bg-yellow-600 text-white rounded-lg text-xs font-bold hover:bg-yellow-500">Nettoyer (3 mois)</button>
+                          <button onClick={exportDeliveredHistory} className="px-3 py-1 bg-indigo-600 text-white rounded-lg text-xs font-bold hover:bg-indigo-500">Historique (CSV)</button>
+                          <button onClick={clearDeliveredHistory} className="px-3 py-1 bg-red-700 text-white rounded-lg text-xs font-bold hover:bg-red-600">Tout vider</button>
+                        </div>
+                        {deliveredOrders.length === 0 ? <p className="text-center text-slate-400 py-4">Aucune commande livrée</p> : deliveredOrders.map(order=>{
+                          const safeItems = Array.isArray(order.items) ? order.items : [];
+                          return (
+                            <div key={order.id} className="mb-4 p-3 bg-slate-700/50 rounded-xl border border-slate-600 opacity-75">
+                              <div className="text-xs text-slate-400 mb-1">{order.timestamp}</div>
+                              <div className="font-semibold text-slate-100">{order.delivery?.name || 'Nom inconnu'}</div>
+                              <div className="text-xs text-slate-300">{order.delivery?.address || ''}</div>
+                              {order.delivery?.phone && <div className="text-xs text-slate-300">📞 {order.delivery.phone}</div>}
+                              {order.delivery?.instructions && <div className="text-xs italic text-slate-400 mt-1">📝 {order.delivery.instructions}</div>}
+                              <div className="mt-2 space-y-1">
+                                {safeItems.map((item,idx)=>(
+                                  <div key={idx} className="flex justify-between text-xs text-slate-300">
+                                    <span>{item.quantity}× {item.product?.name || 'Produit supprimé'}</span>
+                                    {showPrices && item.product?.price ? <span>{(item.product.price * item.quantity).toFixed(2)} DZD</span> : <span>•••</span>}
+                                  </div>
+                                ))}
+                              </div>
+                              <div className="flex justify-between items-center mt-2 pt-2 border-t border-slate-600">
+                                {showPrices ? <span className="font-bold text-indigo-400">Total : {order.total?.toFixed(2) || '0.00'} DZD</span> : <span className="font-bold text-slate-400">Total : •••</span>}
+                                <span className="text-xs text-emerald-400">Livrée</span>
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+            
+            {showDataModal && isAdmin && (
+              <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+                <div className="bg-slate-800 w-full max-w-[340px] rounded-2xl p-6 shadow-2xl border border-slate-700">
+                  <div className="flex justify-between items-center mb-4"><h2 className="text-lg font-bold text-slate-100">Gestion des données</h2><button onClick={()=>{setShowDataModal(false); setPreviewData(null);}} className="text-slate-400 text-2xl hover:text-slate-200">&times;</button></div>
+                  {!previewData ? (
+                    <div className="mt-2 flex flex-col gap-3">
+                      <button onClick={exportToExcel} className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold active:scale-95 hover:bg-indigo-500">Exporter tout l'inventaire (Excel)</button>
+                      <label className="w-full py-3 text-center rounded-xl font-bold bg-indigo-600 text-white cursor-pointer hover:bg-indigo-500 active:scale-95">
+                        Choisir un fichier Excel à importer
+                        <input type="file" className="hidden" accept=".xlsx,.xls,.csv" onChange={(e)=>{ if(e.target.files[0]) analyzeImportFile(e.target.files[0]); e.target.value=''; }} />
+                      </label>
+                      <button 
+                        onClick={() => setShowBatchModal(true)} 
+                        className={`w-full py-3 text-center rounded-xl font-bold transition-all active:scale-95 ${isUploadingBatch ? 'bg-gray-500 cursor-not-allowed' : 'bg-green-600 text-white hover:bg-green-500'}`}
+                        disabled={isUploadingBatch}
+                      >
+                        {isUploadingBatch ? (batchProgress.total > 0 ? `📦 ${batchProgress.current}/${batchProgress.total}` : 'Chargement...') : '📦 Lot de produits'}
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="mt-2">
+                      <div className="bg-slate-700 p-3 rounded-lg mb-4">
+                        <p className="text-sm font-semibold text-slate-100">Prévisualisation :</p>
+                        <p className="text-xs text-slate-300">{previewData.totalProducts} produits détectés dans {previewData.totalBrands} marques</p>
+                        {previewData.errors.length>0 && <p className="text-xs text-red-400 mt-1">{previewData.errors.length} erreurs de données</p>}
+                      </div>
+                      <div className="flex gap-3">
+                        <button onClick={cancelPreview} disabled={isImporting} className="flex-1 py-2 bg-slate-700 rounded-xl font-medium text-slate-200 active:scale-95 disabled:opacity-50">Annuler</button>
+                        <button onClick={confirmImport} disabled={isImporting} className="flex-1 py-2 bg-indigo-600 text-white rounded-xl font-bold active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2">
+                          {isImporting ? (<> <svg className="animate-spin h-4 w-4 text-white" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/><path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/></svg> Importation... </>) : "Confirmer l'importation"}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  <p className="text-[10px] text-slate-400 mt-4 text-center">
+                    Lot de produits : sélectionnez une marque, puis chargez plusieurs images.
+                  </p>
+                </div>
+              </div>
+            )}
+            
+            {showBatchModal && (
+              <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+                <div className="bg-slate-800 w-full max-w-[340px] rounded-2xl p-6 shadow-2xl border border-slate-700">
+                  <div className="flex justify-between items-center mb-4">
+                    <h2 className="text-lg font-bold text-slate-100">Import de produits par lot</h2>
+                    <button onClick={() => setShowBatchModal(false)} className="text-slate-400 text-2xl hover:text-slate-200">&times;</button>
+                  </div>
+                  <label className="text-[10px] uppercase font-bold text-slate-400">Choisir la marque cible</label>
+                  <select 
+                    value={selectedBrandForBatch || ""} 
+                    onChange={(e) => setSelectedBrandForBatch(e.target.value ? parseInt(e.target.value) : null)}
+                    className="w-full p-2 mb-4 bg-slate-900 rounded-lg border border-slate-700 text-slate-200 text-sm"
+                    disabled={isUploadingBatch}
+                  >
+                    <option value="">-- Sélectionner une marque --</option>
+                    {safeBrands.map(b => (
+                      <option key={b.id} value={b.id}>{b.name}</option>
                     ))}
-                    <button onClick={()=>setShowManageModal(false)} className="w-full py-2 bg-indigo-600 text-white rounded-xl mt-4">Fermer</button>
-                  </>
-                )}
-                {showBrandSelect && !editingBrand && (
-                  <>
-                    <h2 className="font-bold text-lg mb-4">Choisir Marque</h2>
-                    <div className="grid grid-cols-2 gap-2 mb-4">{safeBrands.map(b=> <button key={b.id} onClick={()=>{ setNewProduct({...newProduct, brandId:b.id}); setShowBrandSelect(false); setShowProductModal(true); }} className="p-2 bg-slate-100 rounded-lg">{b.name}</button>)}</div>
-                    <button onClick={()=>setShowBrandSelect(false)} className="w-full py-2 bg-slate-200 rounded-xl">Annuler</button>
-                  </>
-                )}
-                {showProductModal && !editingBrand && (
-                  <>
-                    <h2 className="font-bold text-lg mb-4">Nouveau Produit</h2>
-                    <label className="text-xs uppercase font-bold">Nom</label><input type="text" className="w-full p-2 mb-2 bg-slate-100 rounded-lg" onChange={e=>setNewProduct({...newProduct, name:e.target.value})} />
-                    <label className="text-xs uppercase font-bold">Quantité</label><input type="number" className="w-full p-2 mb-2 bg-slate-100 rounded-lg" onChange={e=>setNewProduct({...newProduct, qty:e.target.value})} />
-                    <label className="text-xs uppercase font-bold">Prix</label><input type="number" className="w-full p-2 mb-3 bg-slate-100 rounded-lg" onChange={e=>setNewProduct({...newProduct, price:e.target.value})} />
-                    <FileInput onFileSelect={(file) => setNewProduct({...newProduct, imageFile: file})} label="Image (optionnel)" />
-                    <div className="flex gap-3 mt-4"><button onClick={()=>setShowProductModal(false)} className="flex-1 py-2 bg-slate-200 rounded-xl">Annuler</button><button onClick={()=>requestConfirm("addProduct",null,addProduct)} className="flex-1 py-2 bg-indigo-600 text-white rounded-xl">Ajouter</button></div>
-                  </>
-                )}
+                  </select>
+                  
+                  {isUploadingBatch && batchProgress.total > 0 && (
+                    <div className="mb-4">
+                      <div className="flex justify-between text-xs text-slate-400 mb-1">
+                        <span>Progression</span>
+                        <span>{batchProgress.current} / {batchProgress.total}</span>
+                      </div>
+                      <div className="w-full bg-slate-700 rounded-full h-2">
+                        <div className="bg-indigo-600 h-2 rounded-full transition-all duration-300" style={{ width: `${(batchProgress.current / batchProgress.total) * 100}%` }}></div>
+                      </div>
+                      <p className="text-xs text-slate-300 mt-2">{batchProgress.status}</p>
+                    </div>
+                  )}
+                  
+                  <label className={`w-full py-3 text-center rounded-xl font-bold transition-all active:scale-95 ${!selectedBrandForBatch || isUploadingBatch ? 'bg-gray-500 cursor-not-allowed' : 'bg-blue-600 text-white cursor-pointer hover:bg-blue-500'}`}>
+                    {isUploadingBatch ? 'Traitement en cours...' : 'Choisir les images (produits)'}
+                    <input 
+                      type="file" 
+                      className="hidden" 
+                      accept="image/*" 
+                      multiple 
+                      disabled={!selectedBrandForBatch || isUploadingBatch} 
+                      onChange={(e) => {
+                        if (e.target.files.length) handleBatchProductUpload(Array.from(e.target.files));
+                        e.target.value = '';
+                      }} 
+                    />
+                  </label>
+                  <button onClick={() => setShowBatchModal(false)} className="w-full mt-4 py-2 bg-slate-700 rounded-xl font-medium text-slate-200 hover:bg-slate-600">Annuler</button>
+                </div>
               </div>
-            </div>
-          )}
-          
-          {confirmAction && (
-            <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-[200]">
-              <div className="bg-white w-full max-w-sm rounded-2xl p-5 shadow-2xl">
-                <p className="text-center font-medium mb-4">Confirmer l'action ?</p>
-                <div className="flex gap-3"><button onClick={cancelConfirm} className="flex-1 py-2 bg-slate-200 rounded-xl">Annuler</button><button onClick={executeConfirm} className="flex-1 py-2 bg-indigo-600 text-white rounded-xl">Confirmer</button></div>
+            )}
+            
+            {showImgbbModal && (
+              <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+                <div className="bg-slate-800 w-full max-w-[340px] rounded-2xl p-6 shadow-2xl border border-slate-700">
+                  <div className="flex justify-between items-center mb-4">
+                    <h2 className="text-lg font-bold text-slate-100">Configuration ImgBB</h2>
+                    <button onClick={() => setShowImgbbModal(false)} className="text-slate-400 text-2xl hover:text-slate-200">&times;</button>
+                  </div>
+                  <label className="text-[10px] uppercase font-bold text-slate-400">Clé API ImgBB</label>
+                  <input 
+                    type="text" 
+                    className="w-full p-2 mb-4 bg-slate-900 rounded-lg border border-slate-700 text-slate-200 text-sm"
+                    placeholder="Entrez votre clé API ImgBB"
+                    value={imgbbApiKey}
+                    onChange={(e) => setImgbbApiKey(e.target.value)}
+                  />
+                  <div className="flex gap-3">
+                    <button onClick={() => setShowImgbbModal(false)} className="flex-1 py-2 bg-slate-700 rounded-xl font-medium text-slate-200">Annuler</button>
+                    <button onClick={saveImgbbKey} className="flex-1 py-2 bg-indigo-600 text-white rounded-xl font-bold">Enregistrer</button>
+                  </div>
+                </div>
               </div>
-            </div>
-          )}
-          
-          {isAdmin && <DebugConsole />}
+            )}
+            
+            {(showModal || showProductModal || showBrandSelect || showManageModal || editingBrand) && (
+              <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+                <div className="bg-slate-800 w-full p-6 rounded-[28px] border border-slate-700 shadow-2xl max-h-[80vh] overflow-y-auto">
+                  <div className="flex justify-end"><button onClick={()=>{ setShowModal(false); setShowProductModal(false); setShowBrandSelect(false); setShowManageModal(false); setEditingBrand(null); setEditingProduct(null); }} className="text-slate-400 text-2xl hover:text-slate-200">&times;</button></div>
+                  {editingBrand && (
+                    <>
+                      <h2 className="text-slate-100 font-bold mb-6 text-lg border-l-4 border-indigo-500 pl-3">Modifier Marque</h2>
+                      <label className="text-[9px] uppercase font-bold text-slate-400">Nom</label>
+                      <input type="text" className="w-full p-3 mb-4 bg-slate-900 rounded-lg outline-none focus:ring-1 focus:ring-indigo-500 text-slate-100" value={editingBrand.name} onChange={e=>setEditingBrand({...editingBrand, name:e.target.value})} />
+                      <FileInput onFileSelect={(file) => setEditingBrand({...editingBrand, imageFile: file})} label="Nouvelle image (optionnel)" />
+                      <div className="flex gap-3"><button onClick={()=>setEditingBrand(null)} className="flex-1 py-3 bg-slate-700 rounded-xl font-medium text-slate-200">Annuler</button><button onClick={()=>requestConfirm("saveBrand",null,saveBrandEdit)} className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-medium">Enregistrer</button></div>
+                    </>
+                  )}
+                  {showModal && !editingBrand && (
+                    <>
+                      <h2 className="text-slate-100 font-bold mb-6 text-lg border-l-4 border-indigo-500 pl-3">Nouvelle Marque</h2>
+                      <label className="text-[9px] uppercase font-bold text-slate-400">Nom</label>
+                      <input type="text" className="w-full p-3 mb-4 bg-slate-900 rounded-lg outline-none focus:ring-1 focus:ring-indigo-500 text-slate-100" value={newBrand.name} onChange={e=>setNewBrand({...newBrand, name:e.target.value})} />
+                      <FileInput onFileSelect={(file) => setNewBrand({...newBrand, imageFile: file})} label="Image (optionnel)" />
+                      <div className="flex gap-3"><button onClick={()=>setShowModal(false)} className="flex-1 py-3 bg-slate-700 rounded-xl font-medium text-slate-200">Annuler</button><button onClick={()=>requestConfirm("addBrand",null,addBrand)} className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-medium">Créer</button></div>
+                    </>
+                  )}
+                  {showManageModal && !editingBrand && (
+                    <>
+                      <h2 className="text-slate-100 font-bold mb-6 text-lg border-l-4 border-indigo-500 pl-3">Gestion</h2>
+                      {safeBrands.map(b => (
+                        <div key={b.id} className="mb-3">
+                          <button onClick={()=>setManageSelectedBrand(manageSelectedBrand===b.id?null:b.id)} className="w-full p-4 bg-slate-900 rounded-xl text-left font-semibold text-slate-200 shadow-sm border border-slate-700 hover:bg-slate-700">{b.name}</button>
+                          {manageSelectedBrand===b.id && (
+                            <div className="mt-2 pl-4">
+                              <div className="flex justify-center gap-2 mb-3">
+                                <button onClick={()=>requestConfirm("deleteBrand",{brandId:b.id},()=>deleteBrand(b.id))} className="px-3 py-1.5 bg-red-900/50 text-red-300 rounded-lg text-xs font-bold">✕ Supprimer</button>
+                                <button onClick={()=>setEditingBrand(b)} className="px-3 py-1.5 bg-slate-700 text-slate-200 rounded-lg text-xs font-bold">✎ Modifier</button>
+                              </div>
+                              {b.products.map(p => (
+                                <React.Fragment key={p.id}>
+                                  <div className="flex items-center gap-2 mb-2">
+                                    <button onClick={() => setEditingProduct(editingProduct?.id === p.id ? null : p)} className="flex-1 p-3 bg-slate-900 border border-slate-700 text-slate-200 text-xs font-medium rounded-lg shadow-sm hover:bg-slate-800 text-left">
+                                      {p.name}
+                                    </button>
+                                    <button onClick={() => requestConfirm("deleteProduct", { brandId: b.id, productId: p.id }, () => deleteProduct(b.id, p.id))} className="w-8 h-8 bg-red-900/50 text-red-300 rounded-full font-bold active:scale-95 hover:bg-red-800/50">
+                                      ✕
+                                    </button>
+                                  </div>
+                                  {editingProduct && editingProduct.id === p.id && (
+                                    <div className="p-4 mt-2 mb-3 bg-slate-900 rounded-2xl border border-slate-700">
+                                      <label className="text-[9px] font-bold text-slate-400 uppercase">Nom</label>
+                                      <input type="text" value={editingProduct.name} className="w-full p-2 mb-2 bg-slate-800 rounded-lg border border-slate-700 text-slate-100" onChange={e => setEditingProduct({...editingProduct, name: e.target.value})} />
+                                      <label className="text-[9px] font-bold text-slate-400 uppercase">Quantité</label>
+                                      <input type="number" value={editingProduct.qty} className="w-full p-2 mb-2 bg-slate-800 rounded-lg border border-slate-700 text-slate-100" onChange={e => setEditingProduct({...editingProduct, qty: e.target.value})} />
+                                      <label className="text-[9px] font-bold text-slate-400 uppercase">Prix</label>
+                                      <input type="number" value={editingProduct.price} className="w-full p-2 mb-3 bg-slate-800 rounded-lg border border-slate-700 text-slate-100" onChange={e => setEditingProduct({...editingProduct, price: e.target.value})} />
+                                      <FileInput onFileSelect={(file) => setEditingProduct({...editingProduct, imageFile: file})} label="Nouvelle image (optionnel)" />
+                                      <div className="flex gap-2">
+                                        <button onClick={() => setEditingProduct(null)} className="flex-1 py-2 bg-slate-700 border border-slate-600 rounded-lg text-slate-200">Annuler</button>
+                                        <button onClick={() => requestConfirm("saveProduct", null, saveProductEdit)} className="flex-1 py-2 bg-indigo-600 text-white rounded-lg">Enregistrer</button>
+                                      </div>
+                                    </div>
+                                  )}
+                                </React.Fragment>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                      <button onClick={()=>setShowManageModal(false)} className="w-full py-3 bg-indigo-600 text-white rounded-xl mt-4 font-medium hover:bg-indigo-500">Fermer</button>
+                    </>
+                  )}
+                  {showBrandSelect && !editingBrand && (
+                    <>
+                      <h2 className="text-slate-100 font-bold mb-6 text-lg border-l-4 border-indigo-500 pl-3">Choisir Marque</h2>
+                      <div className="grid grid-cols-2 gap-3 mb-6">{safeBrands.map(b=> <button key={b.id} onClick={()=>{ setNewProduct({...newProduct, brandId:b.id}); setShowBrandSelect(false); setShowProductModal(true); }} className="p-3 bg-slate-900 border border-slate-700 rounded-xl font-medium text-slate-200 hover:bg-slate-800">{b.name}</button>)}</div>
+                      <button onClick={()=>setShowBrandSelect(false)} className="w-full py-3 bg-slate-700 rounded-xl font-medium text-slate-200">Annuler</button>
+                    </>
+                  )}
+                  {showProductModal && !editingBrand && (
+                    <>
+                      <h2 className="text-slate-100 font-bold mb-6 text-lg border-l-4 border-indigo-500 pl-3">Nouveau Produit</h2>
+                      <label className="text-[9px] uppercase font-bold text-slate-400">Nom</label><input type="text" className="w-full p-3 mb-3 bg-slate-900 rounded-lg outline-none focus:ring-1 focus:ring-indigo-500 text-slate-100" onChange={e=>setNewProduct({...newProduct, name:e.target.value})} />
+                      <label className="text-[9px] uppercase font-bold text-slate-400">Quantité</label><input type="number" className="w-full p-3 mb-3 bg-slate-900 rounded-lg outline-none focus:ring-1 focus:ring-indigo-500 text-slate-100" onChange={e=>setNewProduct({...newProduct, qty:e.target.value})} />
+                      <label className="text-[9px] uppercase font-bold text-slate-400">Prix</label><input type="number" className="w-full p-3 mb-3 bg-slate-900 rounded-lg outline-none focus:ring-1 focus:ring-indigo-500 text-slate-100" onChange={e=>setNewProduct({...newProduct, price:e.target.value})} />
+                      <FileInput onFileSelect={(file) => setNewProduct({...newProduct, imageFile: file})} label="Image (optionnel)" />
+                      <div className="flex gap-3"><button onClick={()=>setShowProductModal(false)} className="flex-1 py-3 bg-slate-700 rounded-xl font-medium text-slate-200">Annuler</button><button onClick={()=>requestConfirm("addProduct",null,addProduct)} className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-medium">Ajouter</button></div>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
+            
+            {confirmAction && (
+              <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-[200]">
+                <div className="bg-slate-800 w-full max-w-[280px] rounded-2xl p-5 shadow-2xl border border-slate-700">
+                  <p className="text-slate-100 text-center font-medium mb-4">Confirmer l'action ?</p>
+                  <div className="flex gap-3"><button onClick={cancelConfirm} className="flex-1 py-2 bg-slate-700 rounded-xl font-medium text-slate-200">Annuler</button><button onClick={executeConfirm} className="flex-1 py-2 bg-indigo-600 text-white rounded-xl font-bold">Confirmer</button></div>
+                </div>
+              </div>
+            )}
+            
+            {isAdmin && <DebugConsole />}
+          </div>
+          <style>{`::-webkit-scrollbar { display: none; } @keyframes fade-in-down { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } } .animate-fade-in-down { animation: fade-in-down 0.3s ease-out; }`}</style>
         </div>
       );
     };
