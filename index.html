@@ -53,7 +53,7 @@
       }
     }
 
-    // Normalisation : minuscules, suppression des accents, espaces conservés
+    // Normalisation (minuscules, suppression des accents)
     const normalizeString = (str) => {
       return str.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     };
@@ -209,6 +209,7 @@
       const [previewData, setPreviewData] = useState(null);
       const [isImporting, setIsImporting] = useState(false);
       const [isBatchUploading, setIsBatchUploading] = useState(false);
+      const [selectedBrandForProductImport, setSelectedBrandForProductImport] = useState(null);
       const firebaseInitialized = useRef(false);
       const [firebaseReady, setFirebaseReady] = useState(false);
       const initialLoadDone = useRef(false);
@@ -298,7 +299,7 @@
         });
       }, [firebaseReady]);
       
-      // Sauvegarde immédiate (pas de debounce pour fiabilité)
+      // Sauvegarde immédiate dans Firebase
       useEffect(() => {
         if (!firebaseReady || !initialLoadDone.current) return;
         window.firebase.database().ref('data').set(brands)
@@ -320,7 +321,7 @@
       
       const notify = (msg) => { setNotification(msg); setTimeout(() => setNotification(null), 2000); };
       
-      // Actions manuelles
+      // Actions manuelles (marques, produits)
       const addBrand = async () => {
         if (!firebaseReady) { notify("Firebase pas encore prêt"); return; }
         if (newBrand.name && newBrand.name.trim()) {
@@ -430,8 +431,8 @@
         notify("Produit supprimé"); 
       };
       
-      // Traitement par lot avec correspondance exacte (nom complet de l'image sans extension)
-      const handleBatchImageUpload = async (files) => {
+      // ========== TRAITEMENT PAR LOT POUR MARQUES ==========
+      const handleBatchBrandImages = async (files) => {
         if (!files || files.length === 0) return;
         if (!firebaseReady || !window.firebase || !window.firebase.storage) {
           notify("Firebase Storage n'est pas encore prêt. Veuillez réessayer.");
@@ -440,65 +441,44 @@
         setIsBatchUploading(true);
         let successCount = 0;
         let errorCount = 0;
+        let createdCount = 0;
+        let updatedCount = 0;
         
-        let updatedBrands = JSON.parse(JSON.stringify(brands));
+        let updatedBrands = [...brands];
         
         for (const file of files) {
           try {
-            const fileName = file.name;
-            let baseName = fileName.replace(/\.[^/.]+$/, '').trim();
-            const normalizedBase = normalizeString(baseName);
-            let matched = false;
-            
-            // 1. Recherche d'une marque exacte (nom normalisé)
-            const brandMatch = updatedBrands.find(b => normalizeString(b.name) === normalizedBase);
-            if (brandMatch) {
-              const url = await uploadImageAndGetUrl(file, 'brands');
-              const idx = updatedBrands.findIndex(b => b.id === brandMatch.id);
-              if (idx !== -1) updatedBrands[idx] = { ...updatedBrands[idx], image: url };
-              notify(`✅ Image de la marque "${brandMatch.name}" mise à jour`);
-              successCount++;
-              matched = true;
+            const baseName = file.name.replace(/\.[^/.]+$/, '').trim();
+            if (!baseName) {
+              notify(`❌ Nom de fichier invalide: ${file.name}`);
+              errorCount++;
               continue;
             }
+            // Vérifier si une marque avec ce nom existe déjà (comparaison normalisée)
+            const existingBrand = updatedBrands.find(b => normalizeString(b.name) === normalizeString(baseName));
+            const url = await uploadImageAndGetUrl(file, 'brands');
             
-            // 2. Sinon, essayer de scinder en marque+produit (avec séparateurs)
-            let found = false;
-            for (const separator of ['_', '-', ' ']) {
-              if (baseName.includes(separator)) {
-                const parts = baseName.split(separator);
-                if (parts.length >= 2) {
-                  const brandCandidate = normalizeString(parts[0]);
-                  const productCandidate = normalizeString(parts.slice(1).join(separator));
-                  const brand = updatedBrands.find(b => normalizeString(b.name) === brandCandidate);
-                  if (brand) {
-                    const product = brand.products.find(p => normalizeString(p.name) === productCandidate);
-                    if (product) {
-                      const url = await uploadImageAndGetUrl(file, 'products');
-                      const brandIdx = updatedBrands.findIndex(b => b.id === brand.id);
-                      if (brandIdx !== -1) {
-                        const productIdx = updatedBrands[brandIdx].products.findIndex(p => p.id === product.id);
-                        if (productIdx !== -1) {
-                          updatedBrands[brandIdx].products[productIdx] = { ...product, image: url };
-                        }
-                      }
-                      notify(`✅ Image du produit "${product.name}" (${brand.name}) mise à jour`);
-                      successCount++;
-                      found = true;
-                      matched = true;
-                      break;
-                    }
-                  }
-                }
+            if (existingBrand) {
+              // Mise à jour de l'image existante
+              const idx = updatedBrands.findIndex(b => b.id === existingBrand.id);
+              if (idx !== -1) {
+                updatedBrands[idx] = { ...existingBrand, image: url };
+                updatedCount++;
+                notify(`✅ Marque "${existingBrand.name}" mise à jour`);
               }
-              if (found) break;
+            } else {
+              // Création d'une nouvelle marque
+              const newBrandObj = {
+                id: Date.now() + Math.random(),
+                name: baseName,
+                image: url,
+                products: []
+              };
+              updatedBrands.push(newBrandObj);
+              createdCount++;
+              notify(`✅ Nouvelle marque "${baseName}" créée`);
             }
-            
-            if (!matched) {
-              addLog('error', `Aucune correspondance pour le fichier: ${fileName}`);
-              notify(`❌ Aucune correspondance trouvée pour "${fileName}"`);
-              errorCount++;
-            }
+            successCount++;
           } catch (err) {
             addLog('error', `Erreur lors du traitement de ${file.name}: ${err.message}`);
             notify(`❌ Erreur pour "${file.name}" : ${err.message}`);
@@ -510,7 +490,84 @@
           setBrands(updatedBrands);
         }
         setIsBatchUploading(false);
-        notify(`Traitement terminé : ${successCount} réussis, ${errorCount} échecs.`);
+        notify(`Traitement marques terminé : ${createdCount} créées, ${updatedCount} mises à jour, ${errorCount} échecs.`);
+      };
+      
+      // ========== TRAITEMENT PAR LOT POUR PRODUITS ==========
+      const handleBatchProductImages = async (files) => {
+        if (!files || files.length === 0) return;
+        if (!selectedBrandForProductImport) {
+          notify("Veuillez sélectionner une marque cible pour les produits.");
+          return;
+        }
+        if (!firebaseReady || !window.firebase || !window.firebase.storage) {
+          notify("Firebase Storage n'est pas encore prêt. Veuillez réessayer.");
+          return;
+        }
+        setIsBatchUploading(true);
+        let successCount = 0;
+        let errorCount = 0;
+        let createdCount = 0;
+        let updatedCount = 0;
+        
+        let updatedBrands = [...brands];
+        const brandIndex = updatedBrands.findIndex(b => b.id === selectedBrandForProductImport);
+        if (brandIndex === -1) {
+          notify("La marque sélectionnée n'existe plus.");
+          setIsBatchUploading(false);
+          return;
+        }
+        
+        const currentProducts = updatedBrands[brandIndex].products;
+        
+        for (const file of files) {
+          try {
+            const baseName = file.name.replace(/\.[^/.]+$/, '').trim();
+            if (!baseName) {
+              notify(`❌ Nom de fichier invalide: ${file.name}`);
+              errorCount++;
+              continue;
+            }
+            const existingProduct = currentProducts.find(p => normalizeString(p.name) === normalizeString(baseName));
+            const url = await uploadImageAndGetUrl(file, 'products');
+            
+            if (existingProduct) {
+              // Mise à jour du produit existant
+              const productIdx = currentProducts.findIndex(p => p.id === existingProduct.id);
+              if (productIdx !== -1) {
+                currentProducts[productIdx] = { ...existingProduct, image: url };
+                updatedCount++;
+                notify(`✅ Produit "${existingProduct.name}" mis à jour dans "${updatedBrands[brandIndex].name}"`);
+              }
+            } else {
+              // Création d'un nouveau produit
+              const newProductObj = {
+                id: Date.now() + Math.random(),
+                name: baseName,
+                qty: 0,
+                price: 0,
+                image: url
+              };
+              currentProducts.push(newProductObj);
+              createdCount++;
+              notify(`✅ Nouveau produit "${baseName}" créé dans "${updatedBrands[brandIndex].name}"`);
+            }
+            successCount++;
+          } catch (err) {
+            addLog('error', `Erreur lors du traitement de ${file.name}: ${err.message}`);
+            notify(`❌ Erreur pour "${file.name}" : ${err.message}`);
+            errorCount++;
+          }
+        }
+        
+        // Mettre à jour les produits dans la copie
+        updatedBrands[brandIndex].products = currentProducts;
+        
+        if (successCount > 0) {
+          setBrands(updatedBrands);
+        }
+        setIsBatchUploading(false);
+        notify(`Traitement produits terminé : ${createdCount} créés, ${updatedCount} mis à jour, ${errorCount} échecs.`);
       };
       
       // Export/Import Excel
@@ -744,7 +801,7 @@
       const safeBrands = Array.isArray(brands) ? brands : [];
       const safeSelectedBrand = selectedBrand && selectedBrand.products && Array.isArray(selectedBrand.products) ? selectedBrand : null;
       
-      // Rendu principal (JSX)
+      // Rendu principal
       return (
         <div className="fixed inset-0 bg-slate-900 flex justify-center font-sans">
           {notification && <div className="fixed top-6 z-[100] bg-slate-800 text-slate-100 px-6 py-3 rounded-full text-xs font-bold shadow-2xl animate-fade-in-down border border-indigo-500/30">{notification}</div>}
@@ -997,10 +1054,26 @@
                         Choisir un fichier Excel à importer
                         <input type="file" className="hidden" accept=".xlsx,.xls,.csv" onChange={(e)=>{ if(e.target.files[0]) analyzeImportFile(e.target.files[0]); e.target.value=''; }} />
                       </label>
-                      <label className={`w-full py-3 text-center rounded-xl font-bold transition-all active:scale-95 ${isBatchUploading ? 'bg-gray-500 cursor-not-allowed' : 'bg-green-600 text-white cursor-pointer hover:bg-green-500'}`}>
-                        {isBatchUploading ? 'Traitement en cours...' : 'Images (lot)'}
-                        <input type="file" className="hidden" accept="image/*" multiple disabled={isBatchUploading} onChange={(e)=>{ if(e.target.files.length) handleBatchImageUpload(Array.from(e.target.files)); e.target.value=''; }} />
-                      </label>
+                      <div className="flex flex-col gap-2">
+                        <select 
+                          value={selectedBrandForProductImport || ""} 
+                          onChange={(e) => setSelectedBrandForProductImport(e.target.value ? parseInt(e.target.value) : null)}
+                          className="w-full p-2 bg-slate-900 rounded-lg border border-slate-700 text-slate-200 text-sm"
+                        >
+                          <option value="">-- Sélectionner une marque pour les produits --</option>
+                          {safeBrands.map(b => (
+                            <option key={b.id} value={b.id}>{b.name}</option>
+                          ))}
+                        </select>
+                        <label className={`w-full py-3 text-center rounded-xl font-bold transition-all active:scale-95 ${isBatchUploading ? 'bg-gray-500 cursor-not-allowed' : 'bg-green-600 text-white cursor-pointer hover:bg-green-500'}`}>
+                          {isBatchUploading ? 'Traitement en cours...' : 'Images marques (lot)'}
+                          <input type="file" className="hidden" accept="image/*" multiple disabled={isBatchUploading} onChange={(e)=>{ if(e.target.files.length) handleBatchBrandImages(Array.from(e.target.files)); e.target.value=''; }} />
+                        </label>
+                        <label className={`w-full py-3 text-center rounded-xl font-bold transition-all active:scale-95 ${isBatchUploading || !selectedBrandForProductImport ? 'bg-gray-500 cursor-not-allowed' : 'bg-blue-600 text-white cursor-pointer hover:bg-blue-500'}`}>
+                          {isBatchUploading ? 'Traitement en cours...' : 'Images produits (lot)'}
+                          <input type="file" className="hidden" accept="image/*" multiple disabled={isBatchUploading || !selectedBrandForProductImport} onChange={(e)=>{ if(e.target.files.length) handleBatchProductImages(Array.from(e.target.files)); e.target.value=''; }} />
+                        </label>
+                      </div>
                     </div>
                   ) : (
                     <div className="mt-2">
@@ -1018,8 +1091,8 @@
                     </div>
                   )}
                   <p className="text-[10px] text-slate-400 mt-4 text-center">
-                    Images : nom exact de la marque (ex: Nike.jpg) ou Marque_Produit (ex: Nike_AirMax.jpg)<br/>
-                    Formats supportés : tout format image (sera converti en WebP 800px)
+                    Images marques : une image = une marque (créée ou mise à jour) d'après son nom.<br/>
+                    Images produits : sélectionnez d'abord une marque, les images deviennent des produits dans cette marque.
                   </p>
                 </div>
               </div>
