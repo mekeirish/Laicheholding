@@ -53,7 +53,11 @@
       }
     }
 
-    // Traitement d'image : redimension WebP 800px
+    // Normalisation : minuscules, suppression des accents, espaces conservés
+    const normalizeString = (str) => {
+      return str.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    };
+
     const processImage = (file) => {
       return new Promise((resolve, reject) => {
         if (!file.type.startsWith('image/')) {
@@ -93,7 +97,6 @@
       });
     };
 
-    // Upload vers Firebase Storage
     const uploadImageAndGetUrl = async (file, pathPrefix = 'products') => {
       if (!window.firebase || !window.firebase.storage) {
         throw new Error('Firebase Storage non disponible');
@@ -116,12 +119,11 @@
       if (!Array.isArray(brandsArray)) return [];
       return brandsArray.filter(b => 
         b && typeof b === 'object' && 
-        b.name && typeof b.name === 'string' && b.name.trim() !== '' &&
-        Array.isArray(b.products)
+        b.name && typeof b.name === 'string' && b.name.trim() !== ''
       ).map(b => ({
         ...b,
         name: b.name.trim(),
-        products: b.products.filter(p => p && p.name && typeof p.name === 'string' && p.name.trim() !== '')
+        products: Array.isArray(b.products) ? b.products : []
       }));
     };
 
@@ -211,9 +213,6 @@
       const [firebaseReady, setFirebaseReady] = useState(false);
       const initialLoadDone = useRef(false);
       
-      const brandsTimeoutRef = useRef(null);
-      const ordersTimeoutRef = useRef(null);
-      
       const addLog = useCallback((type, ...args) => {
         const timestamp = new Date().toLocaleTimeString();
         const message = args.map(arg => {
@@ -239,7 +238,7 @@
         };
       }, [addLog]);
       
-      // ========== INITIALISATION FIREBASE ==========
+      // Initialisation Firebase
       useEffect(() => {
         let mounted = true;
         const initFirebase = () => {
@@ -268,7 +267,7 @@
         return () => { mounted = false; };
       }, [addLog]);
       
-      // ========== CHARGEMENT DES DONNÉES DEPUIS FIREBASE ==========
+      // Chargement initial depuis Firebase
       useEffect(() => {
         if (!firebaseReady || !window.firebase || initialLoadDone.current) return;
         const db = window.firebase.database();
@@ -299,35 +298,29 @@
         });
       }, [firebaseReady]);
       
-      // ========== SAUVEGARDE DIFFÉRÉE DANS FIREBASE ==========
+      // Sauvegarde immédiate (pas de debounce pour fiabilité)
       useEffect(() => {
         if (!firebaseReady || !initialLoadDone.current) return;
-        if (brandsTimeoutRef.current) clearTimeout(brandsTimeoutRef.current);
-        brandsTimeoutRef.current = setTimeout(() => {
-          window.firebase.database().ref('data').set(brands)
-            .then(() => addLog('log', 'Brands sauvegardés dans Firebase'))
-            .catch(err => addLog('error', 'Erreur sauvegarde brands: ' + err.message));
-        }, 500);
+        window.firebase.database().ref('data').set(brands)
+          .then(() => addLog('log', 'Brands sauvegardés dans Firebase'))
+          .catch(err => addLog('error', 'Erreur sauvegarde brands: ' + err.message));
       }, [brands, firebaseReady]);
       
       useEffect(() => {
         if (!firebaseReady || !initialLoadDone.current) return;
-        if (ordersTimeoutRef.current) clearTimeout(ordersTimeoutRef.current);
-        ordersTimeoutRef.current = setTimeout(() => {
-          window.firebase.database().ref('orders').set(orders)
-            .then(() => addLog('log', 'Orders sauvegardés dans Firebase'))
-            .catch(err => addLog('error', 'Erreur sauvegarde orders: ' + err.message));
-        }, 500);
+        window.firebase.database().ref('orders').set(orders)
+          .then(() => addLog('log', 'Orders sauvegardés dans Firebase'))
+          .catch(err => addLog('error', 'Erreur sauvegarde orders: ' + err.message));
       }, [orders, firebaseReady]);
       
-      // ========== SAUVEGARDES LOCALES ==========
+      // Sauvegardes locales
       useEffect(() => { localStorage.setItem('marketHubCart', JSON.stringify(cart)); }, [cart]);
       useEffect(() => { localStorage.setItem('marketHubBrands', JSON.stringify(brands)); }, [brands]);
       useEffect(() => { localStorage.setItem('marketHubOrders', JSON.stringify(orders)); }, [orders]);
       
       const notify = (msg) => { setNotification(msg); setTimeout(() => setNotification(null), 2000); };
       
-      // ========== GESTION MANUELLE DES IMAGES ==========
+      // Actions manuelles
       const addBrand = async () => {
         if (!firebaseReady) { notify("Firebase pas encore prêt"); return; }
         if (newBrand.name && newBrand.name.trim()) {
@@ -437,7 +430,7 @@
         notify("Produit supprimé"); 
       };
       
-      // ========== TRAITEMENT PAR LOT (images) ==========
+      // Traitement par lot avec correspondance exacte (nom complet de l'image sans extension)
       const handleBatchImageUpload = async (files) => {
         if (!files || files.length === 0) return;
         if (!firebaseReady || !window.firebase || !window.firebase.storage) {
@@ -448,18 +441,17 @@
         let successCount = 0;
         let errorCount = 0;
         
-        // On travaille sur une copie locale des marques
-        let updatedBrands = JSON.parse(JSON.stringify(brands)); // copie profonde
+        let updatedBrands = JSON.parse(JSON.stringify(brands));
         
         for (const file of files) {
           try {
             const fileName = file.name;
-            // Supprimer l'extension
-            const baseName = fileName.replace(/\.[^/.]+$/, '').toLowerCase();
+            let baseName = fileName.replace(/\.[^/.]+$/, '').trim();
+            const normalizedBase = normalizeString(baseName);
             let matched = false;
             
-            // 1. Correspondance exacte avec une marque (insensible à la casse)
-            const brandMatch = updatedBrands.find(b => b.name.toLowerCase() === baseName);
+            // 1. Recherche d'une marque exacte (nom normalisé)
+            const brandMatch = updatedBrands.find(b => normalizeString(b.name) === normalizedBase);
             if (brandMatch) {
               const url = await uploadImageAndGetUrl(file, 'brands');
               const idx = updatedBrands.findIndex(b => b.id === brandMatch.id);
@@ -470,17 +462,17 @@
               continue;
             }
             
-            // 2. Correspondance produit : format "Marque_Separateur_Produit"
+            // 2. Sinon, essayer de scinder en marque+produit (avec séparateurs)
             let found = false;
             for (const separator of ['_', '-', ' ']) {
               if (baseName.includes(separator)) {
                 const parts = baseName.split(separator);
                 if (parts.length >= 2) {
-                  const brandNameCandidate = parts[0];
-                  const productNameCandidate = parts.slice(1).join(separator);
-                  const brand = updatedBrands.find(b => b.name.toLowerCase() === brandNameCandidate);
+                  const brandCandidate = normalizeString(parts[0]);
+                  const productCandidate = normalizeString(parts.slice(1).join(separator));
+                  const brand = updatedBrands.find(b => normalizeString(b.name) === brandCandidate);
                   if (brand) {
-                    const product = brand.products.find(p => p.name.toLowerCase() === productNameCandidate);
+                    const product = brand.products.find(p => normalizeString(p.name) === productCandidate);
                     if (product) {
                       const url = await uploadImageAndGetUrl(file, 'products');
                       const brandIdx = updatedBrands.findIndex(b => b.id === brand.id);
@@ -521,7 +513,7 @@
         notify(`Traitement terminé : ${successCount} réussis, ${errorCount} échecs.`);
       };
       
-      // ========== EXPORT / IMPORT EXCEL ==========
+      // Export/Import Excel
       const exportToExcel = () => {
         if(!window.XLSX){ notify("Excel non chargé"); return; }
         try {
@@ -598,7 +590,7 @@
       };
       const cancelPreview = () => { setPreviewData(null); notify("Import annulé"); };
       
-      // ========== NAVIGATION & AUTH ==========
+      // Navigation & authentification
       const openBrand = (brand) => {
         if (!brand || !brand.products || !Array.isArray(brand.products)) {
           notify("Marque invalide");
@@ -613,7 +605,7 @@
       const handlePinDelete = () => { setPinCode(p => p.slice(0,-1)); };
       useEffect(() => { if(pinCode.length===6) { if(pinCode==="000000") { setIsAdmin(true); setShowPinModal(false); setPinCode(''); goHome(); notify("Connexion admin"); } else { notify("Code incorrect"); setPinCode(''); } } }, [pinCode]);
       
-      // ========== PANIER & COMMANDES ==========
+      // Panier & commandes
       const openProductModal = (prod) => { setSelectedProduct(prod); setProductQuantity(1); setShowCartModal(false); };
       const addToCart = () => {
         if(!selectedProduct) return;
@@ -644,7 +636,7 @@
       const cancelConfirm = () => setConfirmAction(null);
       const executeConfirm = () => { if(confirmAction?.callback) confirmAction.callback(); setConfirmAction(null); };
       
-      // ========== COMMANDES LIVRÉES ==========
+      // Export CSV historique
       const exportDeliveredHistory = () => {
         if (deliveredOrders.length === 0) {
           notify("Aucune commande livrée à exporter");
@@ -713,7 +705,7 @@
         }
       };
       
-      // ========== COMPOSANTS UTILITAIRES ==========
+      // Composant DebugConsole
       const DebugConsole = () => {
         const copyLogs = async () => {
           const text = logs.map(l => `[${l.timestamp}] ${l.type.toUpperCase()}: ${l.message}`).join('\n');
@@ -752,7 +744,7 @@
       const safeBrands = Array.isArray(brands) ? brands : [];
       const safeSelectedBrand = selectedBrand && selectedBrand.products && Array.isArray(selectedBrand.products) ? selectedBrand : null;
       
-      // ========== RENDU PRINCIPAL (HTML) ==========
+      // Rendu principal (JSX)
       return (
         <div className="fixed inset-0 bg-slate-900 flex justify-center font-sans">
           {notification && <div className="fixed top-6 z-[100] bg-slate-800 text-slate-100 px-6 py-3 rounded-full text-xs font-bold shadow-2xl animate-fade-in-down border border-indigo-500/30">{notification}</div>}
