@@ -53,9 +53,6 @@
       }
     }
 
-    // Clé API ImgBB (à remplacer par la vôtre)
-    const IMGBB_API_KEY = "1ad9f7bbd7efb81be4652de0e5fd8bd9";
-
     // Normalisation des chaînes
     const normalizeString = (str) => {
       return str.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
@@ -100,13 +97,17 @@
       });
     };
 
-    // Upload vers ImgBB
+    // Upload vers ImgBB avec clé API dynamique (stockée dans localStorage)
     const uploadToImgBB = async (file) => {
+      const apiKey = localStorage.getItem('imgbb_api_key');
+      if (!apiKey) {
+        throw new Error('Configuration requise : Veuillez renseigner votre clé API ImgBB dans IMGbank.');
+      }
       try {
         const resizedBlob = await resizeImage(file, 800);
         const formData = new FormData();
         formData.append('image', resizedBlob, file.name);
-        const response = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, {
+        const response = await fetch(`https://api.imgbb.com/1/upload?key=${apiKey}`, {
           method: 'POST',
           body: formData
         });
@@ -187,10 +188,15 @@
       const [pinCode, setPinCode] = useState('');
       const [showPrices, setShowPrices] = useState(true);
       
+      // États pour le lot de produits
       const [showBatchModal, setShowBatchModal] = useState(false);
       const [selectedBrandForBatch, setSelectedBrandForBatch] = useState(null);
       const [isUploadingBatch, setIsUploadingBatch] = useState(false);
       const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0, status: '' });
+      
+      // État pour la modale de configuration ImgBB
+      const [showImgbbModal, setShowImgbbModal] = useState(false);
+      const [imgbbApiKey, setImgbbApiKey] = useState('');
       
       const [brands, setBrands] = useState(() => {
         const saved = localStorage.getItem('marketHubBrands');
@@ -309,7 +315,7 @@
         });
       }, [firebaseReady]);
       
-      // Sauvegardes globales pour le reste de l'app (inchangé)
+      // Sauvegardes globales
       useEffect(() => {
         if (!firebaseReady || !initialLoadDone.current) return;
         window.firebase.database().ref('data').set(brands)
@@ -328,6 +334,23 @@
       useEffect(() => { localStorage.setItem('marketHubOrders', JSON.stringify(orders)); }, [orders]);
       
       const notify = (msg) => { setNotification(msg); setTimeout(() => setNotification(null), 2000); };
+      
+      // Chargement initial de la clé API ImgBB depuis localStorage
+      useEffect(() => {
+        const savedKey = localStorage.getItem('imgbb_api_key');
+        if (savedKey) setImgbbApiKey(savedKey);
+      }, []);
+      
+      // Sauvegarde de la clé API
+      const saveImgbbKey = () => {
+        if (imgbbApiKey.trim()) {
+          localStorage.setItem('imgbb_api_key', imgbbApiKey.trim());
+          notify('Clé API ImgBB enregistrée');
+          setShowImgbbModal(false);
+        } else {
+          notify('Veuillez saisir une clé valide');
+        }
+      };
       
       // ========== Actions manuelles (marques, produits) ==========
       const addBrand = async () => {
@@ -423,7 +446,7 @@
         notify("Produit supprimé"); 
       };
       
-      // ========== TRAITEMENT PAR LOT AVEC IMGBB ==========
+      // ========== TRAITEMENT PAR LOT AVEC IMGBBB ==========
       const handleBatchProductUpload = async (files) => {
         if (!files || files.length === 0) return;
         if (!selectedBrandForBatch) {
@@ -435,30 +458,32 @@
           return;
         }
         
-        // Notification de début
+        // Vérification de la clé API
+        const apiKey = localStorage.getItem('imgbb_api_key');
+        if (!apiKey) {
+          notify("Configuration requise : Veuillez renseigner votre clé API ImgBB dans IMGbank.");
+          return;
+        }
+        
         notify(`Import de ${files.length} produit(s) en cours...`);
         
         try {
           setIsUploadingBatch(true);
           setBatchProgress({ current: 0, total: files.length, status: 'Préparation...' });
           
-          // Récupérer la marque cible
           let updatedBrands = [...brands];
           const brandIndex = updatedBrands.findIndex(b => b.id === selectedBrandForBatch);
           if (brandIndex === -1) throw new Error('La marque sélectionnée n\'existe plus.');
           
           const brandName = updatedBrands[brandIndex].name;
           let currentProducts = updatedBrands[brandIndex].products;
-          let createdCount = 0, updatedCount = 0;
-          let errorCount = 0;
+          let createdCount = 0, updatedCount = 0, errorCount = 0;
           
-          // Traitement séquentiel
           for (let i = 0; i < files.length; i++) {
             const file = files[i];
             setBatchProgress({ current: i + 1, total: files.length, status: `Traitement de ${file.name}...` });
             
             try {
-              // 1. Upload vers ImgBB (redimensionnement automatique inclus)
               const imageUrl = await uploadToImgBB(file);
               const baseName = file.name.replace(/\.[^/.]+$/, '').trim();
               if (!baseName) throw new Error('Nom de fichier invalide');
@@ -490,12 +515,10 @@
             }
           }
           
-          // Mise à jour de la base de données (écriture ciblée)
           if (createdCount + updatedCount > 0) {
             console.log("Produits à sauvegarder:", currentProducts);
             const db = window.firebase.database();
             await db.ref(`data/${brandIndex}/products`).set(currentProducts);
-            // Mettre à jour l'état local
             updatedBrands[brandIndex].products = currentProducts;
             setBrands(updatedBrands);
           } else {
@@ -504,7 +527,6 @@
           
           setBatchProgress({ current: files.length, total: files.length, status: 'Terminé' });
           
-          // Notification finale
           if (errorCount === 0) {
             notify(`✅ Import réussi : ${createdCount} créés, ${updatedCount} mis à jour.`);
             setShowBatchModal(false);
@@ -606,7 +628,7 @@
       };
       const cancelPreview = () => { setPreviewData(null); notify("Import annulé"); };
       
-      // Navigation & authentification (inchangé)
+      // Navigation & authentification
       const openBrand = (brand) => {
         if (!brand || !brand.products || !Array.isArray(brand.products)) { notify("Marque invalide"); return; }
         setIsTransitioning(true); 
@@ -618,7 +640,7 @@
       const handlePinDelete = () => { setPinCode(p => p.slice(0,-1)); };
       useEffect(() => { if(pinCode.length===6) { if(pinCode==="000000") { setIsAdmin(true); setShowPinModal(false); setPinCode(''); goHome(); notify("Connexion admin"); } else { notify("Code incorrect"); setPinCode(''); } } }, [pinCode]);
       
-      // Panier & commandes (inchangé)
+      // Panier & commandes
       const openProductModal = (prod) => { setSelectedProduct(prod); setProductQuantity(1); setShowCartModal(false); };
       const addToCart = () => {
         if(!selectedProduct) return;
@@ -743,7 +765,7 @@
       const safeBrands = Array.isArray(brands) ? brands : [];
       const safeSelectedBrand = selectedBrand && selectedBrand.products && Array.isArray(selectedBrand.products) ? selectedBrand : null;
       
-      // Rendu principal (inchangé)
+      // Rendu principal
       return (
         <div className="fixed inset-0 bg-slate-900 flex justify-center font-sans">
           {notification && <div className="fixed top-6 z-[100] bg-slate-800 text-slate-100 px-6 py-3 rounded-full text-xs font-bold shadow-2xl animate-fade-in-down border border-indigo-500/30">{notification}</div>}
@@ -770,6 +792,11 @@
                 <button onClick={() => setShowManageModal(true)} className="min-h-[48px] flex flex-col items-center justify-center gap-1 p-3 bg-slate-800 border border-slate-700 rounded-xl shadow-sm hover:shadow-lg hover:shadow-indigo-500/10 transition-all duration-200 active:scale-95 text-slate-100 font-medium"><span className="text-xl">⚙️</span><span className="text-sm">Gérer</span></button>
                 <button onClick={() => setShowDataModal(true)} className="min-h-[48px] flex flex-col items-center justify-center gap-1 p-3 bg-slate-800 border border-slate-700 rounded-xl shadow-sm hover:shadow-lg hover:shadow-indigo-500/10 transition-all duration-200 active:scale-95 text-slate-100 font-medium"><span className="text-xl">📊</span><span className="text-sm">Données</span></button>
                 <button onClick={() => setShowOrdersModal(true)} className="col-span-2 min-h-[48px] flex flex-col items-center justify-center gap-1 p-3 bg-slate-800 border border-slate-700 rounded-xl shadow-sm hover:shadow-lg hover:shadow-indigo-500/10 transition-all duration-200 active:scale-95 text-slate-100 font-medium"><span className="text-xl">📋</span><span className="text-sm">Commandes</span></button>
+                {/* NOUVEAU BOUTON IMGbank */}
+                <button onClick={() => setShowImgbbModal(true)} className="col-span-2 min-h-[48px] flex flex-col items-center justify-center gap-1 p-3 bg-slate-800 border border-slate-700 rounded-xl shadow-sm hover:shadow-lg hover:shadow-indigo-500/10 transition-all duration-200 active:scale-95 text-slate-100 font-medium">
+                  <span className="text-xl">🖼️</span>
+                  <span className="text-sm">IMGbank</span>
+                </button>
               </div>
             ) : (
               <div className="grid grid-cols-2 gap-4">
@@ -1079,6 +1106,30 @@
                     />
                   </label>
                   <button onClick={() => setShowBatchModal(false)} className="w-full mt-4 py-2 bg-slate-700 rounded-xl font-medium text-slate-200 hover:bg-slate-600">Annuler</button>
+                </div>
+              </div>
+            )}
+            
+            {/* Modale de configuration ImgBB */}
+            {showImgbbModal && (
+              <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+                <div className="bg-slate-800 w-full max-w-[340px] rounded-2xl p-6 shadow-2xl border border-slate-700">
+                  <div className="flex justify-between items-center mb-4">
+                    <h2 className="text-lg font-bold text-slate-100">Configuration ImgBB</h2>
+                    <button onClick={() => setShowImgbbModal(false)} className="text-slate-400 text-2xl hover:text-slate-200">&times;</button>
+                  </div>
+                  <label className="text-[10px] uppercase font-bold text-slate-400">Clé API ImgBB</label>
+                  <input 
+                    type="text" 
+                    className="w-full p-2 mb-4 bg-slate-900 rounded-lg border border-slate-700 text-slate-200 text-sm"
+                    placeholder="Entrez votre clé API ImgBB"
+                    value={imgbbApiKey}
+                    onChange={(e) => setImgbbApiKey(e.target.value)}
+                  />
+                  <div className="flex gap-3">
+                    <button onClick={() => setShowImgbbModal(false)} className="flex-1 py-2 bg-slate-700 rounded-xl font-medium text-slate-200">Annuler</button>
+                    <button onClick={saveImgbbKey} className="flex-1 py-2 bg-indigo-600 text-white rounded-xl font-bold">Enregistrer</button>
+                  </div>
                 </div>
               </div>
             )}
