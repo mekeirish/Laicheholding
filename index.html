@@ -761,8 +761,8 @@
           
           <div className={`w-full h-full overflow-y-auto p-4 lg:p-6 transition-opacity duration-300 ${isTransitioning ? 'opacity-0' : 'opacity-100'}`}>
             
-            {/* Header (inchangé) */}
-            <div className="flex justify-between items-center mb-8 mt-2 relative">
+            {/* Header avec bouton retour positionné correctement */}
+            <div className="flex justify-between items-center mb-8 mt-2 relative lg:z-20">
               <button onClick={goHome} className="text-slate-400 text-[11px] font-medium tracking-tight hover:text-slate-200 z-10">
                 {currentView === 'home' ? 'LD Holding' : '← Retour'}
               </button>
@@ -777,11 +777,11 @@
               </div>
             </div>
             
-            {/* Vue Client avec sidebar panier fixe à droite (lg uniquement) */}
+            {/* Vue Client avec sidebar panier à gauche (desktop uniquement) */}
             {!isAdmin && currentView === 'home' && (
               <div className="lg:flex lg:gap-6">
-                {/* Sidebar panier fixe à droite sur desktop */}
-                <div className="hidden lg:block lg:fixed lg:right-0 lg:top-0 lg:h-full lg:w-96 lg:min-w-[350px] lg:max-w-xl lg:bg-slate-800 lg:border-l lg:border-slate-700 lg:shadow-xl lg:p-6 lg:overflow-y-auto lg:z-30 lg:mt-0">
+                {/* Sidebar panier fixe à gauche */}
+                <div className="hidden lg:block lg:fixed lg:left-0 lg:top-0 lg:h-full lg:w-96 lg:min-w-[350px] lg:max-w-xl lg:bg-slate-800 lg:border-r lg:border-slate-700 lg:shadow-xl lg:p-6 lg:overflow-y-auto lg:z-30 lg:mt-16">
                   <h2 className="text-xl font-bold text-slate-100 mb-4">Mon panier</h2>
                   {cart.length === 0 ? (
                     <p className="text-center text-slate-400 py-8">Votre panier est vide</p>
@@ -814,8 +814,8 @@
                     </div>
                   )}
                 </div>
-                {/* Contenu principal - grille des marques avec réduction de taille sur desktop */}
-                <div className="flex-1 lg:mr-[384px]">
+                {/* Contenu principal - décalé à droite pour laisser place à la sidebar */}
+                <div className="flex-1 lg:ml-96">
                   <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-4 lg:gap-6">
                     {safeBrands.map(brand => (
                       <div key={brand.id} className="flex flex-col items-center gap-2 lg:scale-90 lg:origin-top">
@@ -830,38 +830,77 @@
               </div>
             )}
             
-            {/* Vue des produits d'une marque (client) - pas de sidebar, mais on réduit aussi la taille des produits sur desktop */}
+            {/* Vue des produits d'une marque (client) - même principe avec sidebar */}
             {!isAdmin && currentView !== 'home' && (
-              <div className="lg:max-w-7xl lg:mx-auto">
-                <div className="grid grid-cols-2 gap-4 lg:grid-cols-4 lg:gap-6">
-                  {safeSelectedBrand && safeSelectedBrand.products.map(prod => (
-                    <div key={prod.id} className="flex flex-col items-center gap-2 bg-slate-800/50 p-2 rounded-2xl shadow-sm border border-slate-700 lg:scale-90 lg:origin-top">
-                      <button onClick={() => openProductModal(prod)} className="w-full aspect-square rounded-[20px] overflow-hidden border border-slate-600 bg-slate-700 active:scale-95 transition-transform">
-                        {prod.image ? <img src={prod.image} className="w-full h-full object-cover" /> : <div className="w-full h-full bg-slate-700 flex items-center justify-center text-[10px] text-slate-400 font-medium">PROD</div>}
-                      </button>
-                      <span className="text-slate-200 font-medium text-xs text-center px-1 lg:text-[11px]">{prod.name}</span>
-                      {showPrices && <span className="text-indigo-400 font-bold text-sm bg-slate-800 px-3 py-1 rounded-full lg:text-xs">{prod.price} DZD</span>}
+              <div className="lg:flex lg:gap-6">
+                <div className="hidden lg:block lg:fixed lg:left-0 lg:top-0 lg:h-full lg:w-96 lg:min-w-[350px] lg:max-w-xl lg:bg-slate-800 lg:border-r lg:border-slate-700 lg:shadow-xl lg:p-6 lg:overflow-y-auto lg:z-30 lg:mt-16">
+                  <h2 className="text-xl font-bold text-slate-100 mb-4">Mon panier</h2>
+                  {cart.length === 0 ? (
+                    <p className="text-center text-slate-400 py-8">Votre panier est vide</p>
+                  ) : (
+                    <div className="space-y-4">
+                      {cart.map((item, idx) => (
+                        <div key={idx} className="flex gap-3 items-start border-b border-slate-700 pb-3">
+                          <div className="w-12 h-12 bg-slate-700 rounded-lg overflow-hidden flex-shrink-0">
+                            {item.product.image ? <img src={item.product.image} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-[8px] text-slate-500">img</div>}
+                          </div>
+                          <div className="flex-1">
+                            <p className="font-semibold text-slate-100 text-sm">{item.product.name}</p>
+                            <p className="text-slate-400 text-xs">{item.brandName} · {item.quantity} × {showPrices ? `${item.product.price} DZD` : ''}</p>
+                            {showPrices && <p className="text-indigo-400 text-xs font-bold">{(item.product.price * item.quantity).toFixed(2)} DZD</p>}
+                          </div>
+                          <button onClick={() => removeFromCart(idx)} className="w-8 h-8 bg-red-900/50 text-red-300 rounded-full font-bold active:scale-95 hover:bg-red-800/50">✕</button>
+                        </div>
+                      ))}
                     </div>
-                  ))}
+                  )}
+                  {cart.length > 0 && (
+                    <div className="mt-6 pt-4 border-t border-slate-700 sticky bottom-0 bg-slate-800">
+                      {showPrices && (
+                        <div className="flex justify-between font-bold text-slate-100 mb-3">
+                          <span>Total</span>
+                          <span className="text-indigo-400">{cartTotal.toFixed(2)} DZD</span>
+                        </div>
+                      )}
+                      <button onClick={openDeliveryModal} className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold active:scale-95 hover:bg-indigo-500">Valider la commande</button>
+                    </div>
+                  )}
+                </div>
+                <div className="flex-1 lg:ml-96">
+                  <div className="grid grid-cols-2 gap-4 lg:grid-cols-4 lg:gap-6">
+                    {safeSelectedBrand && safeSelectedBrand.products.map(prod => (
+                      <div key={prod.id} className="flex flex-col items-center gap-2 bg-slate-800/50 p-2 rounded-2xl shadow-sm border border-slate-700 lg:scale-90 lg:origin-top">
+                        <button onClick={() => openProductModal(prod)} className="w-full aspect-square rounded-[20px] overflow-hidden border border-slate-600 bg-slate-700 active:scale-95 transition-transform">
+                          {prod.image ? <img src={prod.image} className="w-full h-full object-cover" /> : <div className="w-full h-full bg-slate-700 flex items-center justify-center text-[10px] text-slate-400 font-medium">PROD</div>}
+                        </button>
+                        <span className="text-slate-200 font-medium text-xs text-center px-1 lg:text-[11px]">{prod.name}</span>
+                        {showPrices && <span className="text-indigo-400 font-bold text-sm bg-slate-800 px-3 py-1 rounded-full lg:text-xs">{prod.price} DZD</span>}
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
             )}
             
-            {/* Vue Admin : Dashboard avec sidebar (lg uniquement) */}
+            {/* Vue Admin : Dashboard avec sidebar (lg uniquement) - avec IMGbank en bas */}
             {isAdmin && currentView === 'home' && (
               <div className="lg:flex lg:gap-6">
                 {/* Sidebar admin (navigation) */}
-                <div className="hidden lg:block lg:w-72 lg:flex-shrink-0 lg:bg-slate-800 lg:rounded-xl lg:border lg:border-slate-700 lg:shadow-lg lg:p-4 lg:h-[calc(100vh-120px)] lg:overflow-y-auto">
-                  <h2 className="text-lg font-bold text-slate-100 mb-4">Administration</h2>
-                  <div className="space-y-2">
-                    <button onClick={() => setShowModal(true)} className="w-full text-left py-2 px-3 rounded-lg bg-slate-700 hover:bg-slate-600 transition-colors text-slate-200">🏷️ Ajouter une marque</button>
-                    <button onClick={() => setShowBrandSelect(true)} className="w-full text-left py-2 px-3 rounded-lg bg-slate-700 hover:bg-slate-600 transition-colors text-slate-200">📦 Ajouter un produit</button>
-                    <button onClick={() => setShowManageModal(true)} className="w-full text-left py-2 px-3 rounded-lg bg-slate-700 hover:bg-slate-600 transition-colors text-slate-200">⚙️ Gérer</button>
-                    <button onClick={() => setShowDataModal(true)} className="w-full text-left py-2 px-3 rounded-lg bg-slate-700 hover:bg-slate-600 transition-colors text-slate-200">📊 Données</button>
-                    <button onClick={() => setShowOrdersModal(true)} className="w-full text-left py-2 px-3 rounded-lg bg-slate-700 hover:bg-slate-600 transition-colors text-slate-200">📋 Commandes</button>
-                    {/* Bouton IMGbank déplacé en bas avec style discret sur desktop */}
-                    <button onClick={() => setShowImgbbModal(true)} className="w-full text-left py-2 px-3 rounded-lg bg-slate-700 hover:bg-slate-600 transition-colors text-slate-200 lg:mt-8 lg:opacity-50 lg:hover:opacity-100 lg:text-xs">🖼️ IMGbank</button>
+                <div className="hidden lg:block lg:w-72 lg:flex-shrink-0 lg:bg-slate-800 lg:rounded-xl lg:border lg:border-slate-700 lg:shadow-lg lg:p-4 lg:h-[calc(100vh-120px)] lg:overflow-y-auto lg:flex lg:flex-col lg:justify-between">
+                  <div>
+                    <h2 className="text-lg font-bold text-slate-100 mb-4">Administration</h2>
+                    <div className="space-y-2">
+                      <button onClick={() => setShowModal(true)} className="w-full text-left py-2 px-3 rounded-lg bg-slate-700 hover:bg-slate-600 transition-colors text-slate-200">🏷️ Ajouter une marque</button>
+                      <button onClick={() => setShowBrandSelect(true)} className="w-full text-left py-2 px-3 rounded-lg bg-slate-700 hover:bg-slate-600 transition-colors text-slate-200">📦 Ajouter un produit</button>
+                      <button onClick={() => setShowManageModal(true)} className="w-full text-left py-2 px-3 rounded-lg bg-slate-700 hover:bg-slate-600 transition-colors text-slate-200">⚙️ Gérer</button>
+                      <button onClick={() => setShowDataModal(true)} className="w-full text-left py-2 px-3 rounded-lg bg-slate-700 hover:bg-slate-600 transition-colors text-slate-200">📊 Données</button>
+                      <button onClick={() => setShowOrdersModal(true)} className="w-full text-left py-2 px-3 rounded-lg bg-slate-700 hover:bg-slate-600 transition-colors text-slate-200">📋 Commandes</button>
+                    </div>
                   </div>
+                  {/* Bouton IMGbank déplacé en bas, discret */}
+                  <button onClick={() => setShowImgbbModal(true)} className="mt-6 w-full text-left py-2 px-3 rounded-lg bg-slate-700 hover:bg-slate-600 transition-colors text-slate-200 lg:opacity-50 lg:hover:opacity-100 lg:text-xs">
+                    🖼️ IMGbank
+                  </button>
                 </div>
                 {/* Contenu admin principal (grille des boutons) */}
                 <div className="flex-1">
@@ -871,7 +910,6 @@
                     <button onClick={() => setShowManageModal(true)} className="min-h-[48px] flex flex-col items-center justify-center gap-1 p-3 bg-slate-800 border border-slate-700 rounded-xl shadow-sm hover:shadow-lg hover:shadow-indigo-500/10 transition-all duration-200 active:scale-95 text-slate-100 font-medium"><span className="text-xl">⚙️</span><span className="text-sm">Gérer</span></button>
                     <button onClick={() => setShowDataModal(true)} className="min-h-[48px] flex flex-col items-center justify-center gap-1 p-3 bg-slate-800 border border-slate-700 rounded-xl shadow-sm hover:shadow-lg hover:shadow-indigo-500/10 transition-all duration-200 active:scale-95 text-slate-100 font-medium"><span className="text-xl">📊</span><span className="text-sm">Données</span></button>
                     <button onClick={() => setShowOrdersModal(true)} className="min-h-[48px] flex flex-col items-center justify-center gap-1 p-3 bg-slate-800 border border-slate-700 rounded-xl shadow-sm hover:shadow-lg hover:shadow-indigo-500/10 transition-all duration-200 active:scale-95 text-slate-100 font-medium"><span className="text-xl">📋</span><span className="text-sm">Commandes</span></button>
-                    {/* IMGbank dans le contenu principal (mobile) mais pas en double, on le laisse aussi ici pour mobile */}
                     <button onClick={() => setShowImgbbModal(true)} className="min-h-[48px] flex flex-col items-center justify-center gap-1 p-3 bg-slate-800 border border-slate-700 rounded-xl shadow-sm hover:shadow-lg hover:shadow-indigo-500/10 transition-all duration-200 active:scale-95 text-slate-100 font-medium"><span className="text-xl">🖼️</span><span className="text-sm">IMGbank</span></button>
                   </div>
                 </div>
@@ -980,37 +1018,37 @@
               </div>
             )}
             
-            {/* MODALE COMMANDES ADMIN - agrandie sur desktop */}
+            {/* MODALE COMMANDES ADMIN - agrandie sur desktop avec police plus grande */}
             {showOrdersModal && isAdmin && (
               <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
                 <div className="bg-slate-800 w-full max-w-[340px] lg:max-w-4xl lg:mx-auto lg:p-8 rounded-2xl shadow-2xl max-h-[85vh] flex flex-col border border-slate-700">
                   <div className="p-4 border-b border-slate-700 flex justify-between items-center lg:px-6"><h2 className="text-lg font-bold text-slate-100 lg:text-xl">Commandes</h2><button onClick={() => setShowOrdersModal(false)} className="text-slate-400 text-2xl hover:text-slate-200">&times;</button></div>
                   <div className="flex border-b border-slate-700">
-                    <button onClick={() => setOrdersActiveTab("new")} className={`flex-1 py-3 text-xs font-medium lg:text-sm ${ordersActiveTab==="new"?"text-indigo-400 border-b-2 border-indigo-400":"text-slate-400"}`}>Nouvelles ({newOrders.length})</button>
-                    <button onClick={() => setOrdersActiveTab("processed")} className={`flex-1 py-3 text-xs font-medium lg:text-sm ${ordersActiveTab==="processed"?"text-indigo-400 border-b-2 border-indigo-400":"text-slate-400"}`}>Traitées ({processedOrders.length})</button>
-                    <button onClick={() => setOrdersActiveTab("delivered")} className={`flex-1 py-3 text-xs font-medium lg:text-sm ${ordersActiveTab==="delivered"?"text-indigo-400 border-b-2 border-indigo-400":"text-slate-400"}`}>Livrées ({deliveredOrders.length})</button>
+                    <button onClick={() => setOrdersActiveTab("new")} className={`flex-1 py-3 text-xs font-medium lg:text-base ${ordersActiveTab==="new"?"text-indigo-400 border-b-2 border-indigo-400":"text-slate-400"}`}>Nouvelles ({newOrders.length})</button>
+                    <button onClick={() => setOrdersActiveTab("processed")} className={`flex-1 py-3 text-xs font-medium lg:text-base ${ordersActiveTab==="processed"?"text-indigo-400 border-b-2 border-indigo-400":"text-slate-400"}`}>Traitées ({processedOrders.length})</button>
+                    <button onClick={() => setOrdersActiveTab("delivered")} className={`flex-1 py-3 text-xs font-medium lg:text-base ${ordersActiveTab==="delivered"?"text-indigo-400 border-b-2 border-indigo-400":"text-slate-400"}`}>Livrées ({deliveredOrders.length})</button>
                   </div>
                   <div className="flex-1 overflow-y-auto p-3 lg:p-6">
                     {ordersActiveTab === "new" && (newOrders.length===0?<p className="text-center text-slate-400 py-4">Aucune nouvelle commande</p>:newOrders.map(order=>{
                       const safeItems = Array.isArray(order.items) ? order.items : [];
                       return (
                         <div key={order.id} className="mb-4 p-3 bg-slate-700/50 rounded-xl border border-slate-600">
-                          <div className="text-xs text-slate-400 mb-1">{order.timestamp}</div>
-                          <div className="font-semibold text-slate-100">{order.delivery?.name || 'Nom inconnu'}</div>
-                          <div className="text-xs text-slate-300">{order.delivery?.address || ''}</div>
-                          {order.delivery?.phone && <div className="text-xs text-slate-300">📞 {order.delivery.phone}</div>}
-                          {order.delivery?.instructions && <div className="text-xs italic text-slate-400 mt-1">📝 {order.delivery.instructions}</div>}
+                          <div className="text-xs text-slate-400 mb-1 lg:text-sm">{order.timestamp}</div>
+                          <div className="font-semibold text-slate-100 lg:text-base">{order.delivery?.name || 'Nom inconnu'}</div>
+                          <div className="text-xs text-slate-300 lg:text-sm">{order.delivery?.address || ''}</div>
+                          {order.delivery?.phone && <div className="text-xs text-slate-300 lg:text-sm">📞 {order.delivery.phone}</div>}
+                          {order.delivery?.instructions && <div className="text-xs italic text-slate-400 mt-1 lg:text-sm">📝 {order.delivery.instructions}</div>}
                           <div className="mt-2 space-y-1">
                             {safeItems.map((item,idx)=>(
-                              <div key={idx} className="flex justify-between text-xs text-slate-300">
+                              <div key={idx} className="flex justify-between text-xs text-slate-300 lg:text-sm">
                                 <span>{item.quantity}× {item.product?.name || 'Produit supprimé'}</span>
                                 {showPrices && item.product?.price ? <span>{(item.product.price * item.quantity).toFixed(2)} DZD</span> : <span>•••</span>}
                               </div>
                             ))}
                           </div>
                           <div className="flex justify-between items-center mt-2 pt-2 border-t border-slate-600">
-                            {showPrices ? <span className="font-bold text-indigo-400">Total : {order.total?.toFixed(2) || '0.00'} DZD</span> : <span className="font-bold text-slate-400">Total : •••</span>}
-                            <button onClick={()=>requestConfirm("update",{orderId:order.id,newStatus:"processed"},()=>updateOrderStatus(order.id,"processed"))} className="px-3 py-1 bg-indigo-600 text-white rounded-lg text-xs font-bold">Marquer traitée</button>
+                            {showPrices ? <span className="font-bold text-indigo-400 lg:text-base">Total : {order.total?.toFixed(2) || '0.00'} DZD</span> : <span className="font-bold text-slate-400">Total : •••</span>}
+                            <button onClick={()=>requestConfirm("update",{orderId:order.id,newStatus:"processed"},()=>updateOrderStatus(order.id,"processed"))} className="px-3 py-1 bg-indigo-600 text-white rounded-lg text-xs font-bold lg:text-sm">Marquer traitée</button>
                           </div>
                         </div>
                       );
@@ -1019,22 +1057,22 @@
                       const safeItems = Array.isArray(order.items) ? order.items : [];
                       return (
                         <div key={order.id} className="mb-4 p-3 bg-slate-700/50 rounded-xl border border-slate-600">
-                          <div className="text-xs text-slate-400 mb-1">{order.timestamp}</div>
-                          <div className="font-semibold text-slate-100">{order.delivery?.name || 'Nom inconnu'}</div>
-                          <div className="text-xs text-slate-300">{order.delivery?.address || ''}</div>
-                          {order.delivery?.phone && <div className="text-xs text-slate-300">📞 {order.delivery.phone}</div>}
-                          {order.delivery?.instructions && <div className="text-xs italic text-slate-400 mt-1">📝 {order.delivery.instructions}</div>}
+                          <div className="text-xs text-slate-400 mb-1 lg:text-sm">{order.timestamp}</div>
+                          <div className="font-semibold text-slate-100 lg:text-base">{order.delivery?.name || 'Nom inconnu'}</div>
+                          <div className="text-xs text-slate-300 lg:text-sm">{order.delivery?.address || ''}</div>
+                          {order.delivery?.phone && <div className="text-xs text-slate-300 lg:text-sm">📞 {order.delivery.phone}</div>}
+                          {order.delivery?.instructions && <div className="text-xs italic text-slate-400 mt-1 lg:text-sm">📝 {order.delivery.instructions}</div>}
                           <div className="mt-2 space-y-1">
                             {safeItems.map((item,idx)=>(
-                              <div key={idx} className="flex justify-between text-xs text-slate-300">
+                              <div key={idx} className="flex justify-between text-xs text-slate-300 lg:text-sm">
                                 <span>{item.quantity}× {item.product?.name || 'Produit supprimé'}</span>
                                 {showPrices && item.product?.price ? <span>{(item.product.price * item.quantity).toFixed(2)} DZD</span> : <span>•••</span>}
                               </div>
                             ))}
                           </div>
                           <div className="flex justify-between items-center mt-2 pt-2 border-t border-slate-600">
-                            {showPrices ? <span className="font-bold text-indigo-400">Total : {order.total?.toFixed(2) || '0.00'} DZD</span> : <span className="font-bold text-slate-400">Total : •••</span>}
-                            <button onClick={()=>requestConfirm("update",{orderId:order.id,newStatus:"delivered"},()=>updateOrderStatus(order.id,"delivered"))} className="px-3 py-1 bg-indigo-600 text-white rounded-lg text-xs font-bold">Marquer livrée</button>
+                            {showPrices ? <span className="font-bold text-indigo-400 lg:text-base">Total : {order.total?.toFixed(2) || '0.00'} DZD</span> : <span className="font-bold text-slate-400">Total : •••</span>}
+                            <button onClick={()=>requestConfirm("update",{orderId:order.id,newStatus:"delivered"},()=>updateOrderStatus(order.id,"delivered"))} className="px-3 py-1 bg-indigo-600 text-white rounded-lg text-xs font-bold lg:text-sm">Marquer livrée</button>
                           </div>
                         </div>
                       );
@@ -1050,21 +1088,21 @@
                           const safeItems = Array.isArray(order.items) ? order.items : [];
                           return (
                             <div key={order.id} className="mb-4 p-3 bg-slate-700/50 rounded-xl border border-slate-600 opacity-75">
-                              <div className="text-xs text-slate-400 mb-1">{order.timestamp}</div>
-                              <div className="font-semibold text-slate-100">{order.delivery?.name || 'Nom inconnu'}</div>
-                              <div className="text-xs text-slate-300">{order.delivery?.address || ''}</div>
-                              {order.delivery?.phone && <div className="text-xs text-slate-300">📞 {order.delivery.phone}</div>}
-                              {order.delivery?.instructions && <div className="text-xs italic text-slate-400 mt-1">📝 {order.delivery.instructions}</div>}
+                              <div className="text-xs text-slate-400 mb-1 lg:text-sm">{order.timestamp}</div>
+                              <div className="font-semibold text-slate-100 lg:text-base">{order.delivery?.name || 'Nom inconnu'}</div>
+                              <div className="text-xs text-slate-300 lg:text-sm">{order.delivery?.address || ''}</div>
+                              {order.delivery?.phone && <div className="text-xs text-slate-300 lg:text-sm">📞 {order.delivery.phone}</div>}
+                              {order.delivery?.instructions && <div className="text-xs italic text-slate-400 mt-1 lg:text-sm">📝 {order.delivery.instructions}</div>}
                               <div className="mt-2 space-y-1">
                                 {safeItems.map((item,idx)=>(
-                                  <div key={idx} className="flex justify-between text-xs text-slate-300">
+                                  <div key={idx} className="flex justify-between text-xs text-slate-300 lg:text-sm">
                                     <span>{item.quantity}× {item.product?.name || 'Produit supprimé'}</span>
                                     {showPrices && item.product?.price ? <span>{(item.product.price * item.quantity).toFixed(2)} DZD</span> : <span>•••</span>}
                                   </div>
                                 ))}
                               </div>
                               <div className="flex justify-between items-center mt-2 pt-2 border-t border-slate-600">
-                                {showPrices ? <span className="font-bold text-indigo-400">Total : {order.total?.toFixed(2) || '0.00'} DZD</span> : <span className="font-bold text-slate-400">Total : •••</span>}
+                                {showPrices ? <span className="font-bold text-indigo-400 lg:text-base">Total : {order.total?.toFixed(2) || '0.00'} DZD</span> : <span className="font-bold text-slate-400">Total : •••</span>}
                                 <span className="text-xs text-emerald-400">Livrée</span>
                               </div>
                             </div>
@@ -1077,7 +1115,7 @@
               </div>
             )}
             
-            {/* MODALE DONNÉES avec textes modifiés */}
+            {/* MODALE DONNÉES avec sélection de marque corrigée */}
             {showDataModal && isAdmin && (
               <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
                 <div className="bg-slate-800 w-full max-w-[340px] lg:max-w-2xl lg:mx-auto rounded-2xl p-6 shadow-2xl border border-slate-700">
@@ -1089,8 +1127,28 @@
                         Importer
                         <input type="file" className="hidden" accept=".xlsx,.xls,.csv" onChange={(e)=>{ if(e.target.files[0]) analyzeImportFile(e.target.files[0]); e.target.value=''; }} />
                       </label>
+                      {/* Correction du bug : le select utilise setSelectedBrandForBatch avec parseInt, et la valeur par défaut est vide */}
+                      <select 
+                        value={selectedBrandForBatch === null ? "" : selectedBrandForBatch} 
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setSelectedBrandForBatch(val === "" ? null : parseInt(val));
+                        }}
+                        className="w-full p-2 bg-slate-900 rounded-lg border border-slate-700 text-slate-200 text-sm"
+                      >
+                        <option value="">-- Sélectionner une marque --</option>
+                        {safeBrands.map(b => (
+                          <option key={b.id} value={b.id}>{b.name}</option>
+                        ))}
+                      </select>
                       <button 
-                        onClick={() => setShowBatchModal(true)} 
+                        onClick={() => {
+                          if (selectedBrandForBatch === null) {
+                            notify("Veuillez sélectionner une marque");
+                            return;
+                          }
+                          setShowBatchModal(true);
+                        }} 
                         className={`w-full py-3 text-center rounded-xl font-bold transition-all active:scale-95 ${isUploadingBatch ? 'bg-gray-500 cursor-not-allowed' : 'bg-green-600 text-white hover:bg-green-500'}`}
                         disabled={isUploadingBatch}
                       >
@@ -1128,8 +1186,11 @@
                   </div>
                   <label className="text-[10px] uppercase font-bold text-slate-400">Choisir la marque cible</label>
                   <select 
-                    value={selectedBrandForBatch || ""} 
-                    onChange={(e) => setSelectedBrandForBatch(e.target.value ? parseInt(e.target.value) : null)}
+                    value={selectedBrandForBatch === null ? "" : selectedBrandForBatch}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setSelectedBrandForBatch(val === "" ? null : parseInt(val));
+                    }}
                     className="w-full p-2 mb-4 bg-slate-900 rounded-lg border border-slate-700 text-slate-200 text-sm"
                     disabled={isUploadingBatch}
                   >
@@ -1150,14 +1211,14 @@
                       <p className="text-xs text-slate-300 mt-2">{batchProgress.status}</p>
                     </div>
                   )}
-                  <label className={`w-full py-3 text-center rounded-xl font-bold transition-all active:scale-95 ${!selectedBrandForBatch || isUploadingBatch ? 'bg-gray-500 cursor-not-allowed' : 'bg-blue-600 text-white cursor-pointer hover:bg-blue-500'}`}>
+                  <label className={`w-full py-3 text-center rounded-xl font-bold transition-all active:scale-95 ${selectedBrandForBatch === null || isUploadingBatch ? 'bg-gray-500 cursor-not-allowed' : 'bg-blue-600 text-white cursor-pointer hover:bg-blue-500'}`}>
                     {isUploadingBatch ? 'Traitement en cours...' : 'Choisir les images (produits)'}
                     <input 
                       type="file" 
                       className="hidden" 
                       accept="image/*" 
                       multiple 
-                      disabled={!selectedBrandForBatch || isUploadingBatch} 
+                      disabled={selectedBrandForBatch === null || isUploadingBatch} 
                       onChange={(e) => {
                         if (e.target.files.length) handleBatchProductUpload(Array.from(e.target.files));
                         e.target.value = '';
