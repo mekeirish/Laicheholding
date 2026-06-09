@@ -180,7 +180,6 @@
       const [pinCode, setPinCode] = useState('');
       const [showPrices, setShowPrices] = useState(true);
       
-      // États pour le lot de produits
       const [showBatchModal, setShowBatchModal] = useState(false);
       const [selectedBrandForBatch, setSelectedBrandForBatch] = useState(null);
       const [isUploadingBatch, setIsUploadingBatch] = useState(false);
@@ -243,7 +242,7 @@
         };
       }, [addLog]);
       
-      // Initialisation Firebase
+      // Firebase init
       useEffect(() => {
         let mounted = true;
         const initFirebase = () => {
@@ -284,7 +283,7 @@
             const cleaned = cleanBrands(raw);
             setBrands(cleaned);
             localStorage.setItem('marketHubBrands', JSON.stringify(cleaned));
-            addLog('log', 'Brands chargés depuis Firebase');
+            addLog('log', 'Brands chargés');
           }
           if (data?.orders) {
             let rawOrders = data.orders;
@@ -292,7 +291,7 @@
             const cleanedOrders = cleanOrders(rawOrders);
             setOrders(cleanedOrders);
             localStorage.setItem('marketHubOrders', JSON.stringify(cleanedOrders));
-            addLog('log', 'Orders chargés depuis Firebase');
+            addLog('log', 'Orders chargés');
           }
           initialLoadDone.current = true;
           setIsLoading(false);
@@ -307,25 +306,23 @@
       useEffect(() => {
         if (!firebaseReady || !initialLoadDone.current) return;
         window.firebase.database().ref('data').set(brands)
-          .then(() => addLog('log', 'Brands sauvegardés dans Firebase'))
+          .then(() => addLog('log', 'Brands sauvegardés'))
           .catch(err => addLog('error', 'Erreur sauvegarde brands: ' + err.message));
       }, [brands, firebaseReady]);
-      
       useEffect(() => {
         if (!firebaseReady || !initialLoadDone.current) return;
         window.firebase.database().ref('orders').set(orders)
-          .then(() => addLog('log', 'Orders sauvegardés dans Firebase'))
+          .then(() => addLog('log', 'Orders sauvegardés'))
           .catch(err => addLog('error', 'Erreur sauvegarde orders: ' + err.message));
       }, [orders, firebaseReady]);
       
-      // Sauvegardes locales
       useEffect(() => { localStorage.setItem('marketHubCart', JSON.stringify(cart)); }, [cart]);
       useEffect(() => { localStorage.setItem('marketHubBrands', JSON.stringify(brands)); }, [brands]);
       useEffect(() => { localStorage.setItem('marketHubOrders', JSON.stringify(orders)); }, [orders]);
       
       const notify = (msg) => { setNotification(msg); setTimeout(() => setNotification(null), 2000); };
       
-      // Actions manuelles (marques, produits) – inchangées
+      // ========== Actions manuelles (marques, produits) ==========
       const addBrand = async () => {
         if (!firebaseReady) { notify("Firebase pas encore prêt"); return; }
         if (newBrand.name && newBrand.name.trim()) {
@@ -349,13 +346,9 @@
           setNewBrand({ name: "", imageFile: null });
           setShowModal(false);
           notify("Marque ajoutée");
-        } else {
-          notify("Nom requis");
-        }
+        } else { notify("Nom requis"); }
       };
-      
       const deleteBrand = (id) => { setBrands(brands.filter(b => b.id !== id)); notify("Marque supprimée"); };
-      
       const saveBrandEdit = async () => {
         if (!firebaseReady) { notify("Firebase pas encore prêt"); return; }
         if (editingBrand.name && editingBrand.name.trim()) {
@@ -372,11 +365,8 @@
           setBrands(brands.map(b => b.id === editingBrand.id ? {...editingBrand, name: editingBrand.name.trim(), image: imageUrl} : b));
           setEditingBrand(null);
           notify("Marque mise à jour");
-        } else {
-          notify("Nom requis");
-        }
+        } else { notify("Nom requis"); }
       };
-      
       const addProduct = async () => {
         if (!firebaseReady) { notify("Firebase pas encore prêt"); return; }
         if (newProduct.name && newProduct.name.trim() && newProduct.brandId) {
@@ -401,11 +391,8 @@
           setNewProduct({ name: "", qty: "", price: "", imageFile: null, brandId: null });
           setShowProductModal(false);
           notify("Produit ajouté");
-        } else {
-          notify("Nom et marque requis");
-        }
+        } else { notify("Nom et marque requis"); }
       };
-      
       const saveProductEdit = async () => {
         if (!firebaseReady) { notify("Firebase pas encore prêt"); return; }
         if (editingProduct.name && editingProduct.name.trim()) {
@@ -419,23 +406,17 @@
               return;
             }
           }
-          setBrands(brands.map(b => ({
-            ...b,
-            products: b.products.map(p => p.id === editingProduct.id ? {...editingProduct, name: editingProduct.name.trim(), image: imageUrl} : p)
-          })));
+          setBrands(brands.map(b => ({ ...b, products: b.products.map(p => p.id === editingProduct.id ? {...editingProduct, name: editingProduct.name.trim(), image: imageUrl} : p) })));
           setEditingProduct(null);
           notify("Produit modifié");
-        } else {
-          notify("Nom requis");
-        }
+        } else { notify("Nom requis"); }
       };
-      
       const deleteProduct = (brandId, productId) => { 
         setBrands(brands.map(b => b.id === brandId ? { ...b, products: b.products.filter(p => p.id !== productId) } : b)); 
         notify("Produit supprimé"); 
       };
       
-      // ========== TRAITEMENT PAR LOT CORRIGÉ (avec délai pour mise à jour UI) ==========
+      // ========== TRAITEMENT PAR LOT AVEC Promise.allSettled ==========
       const handleBatchProductUpload = async (files) => {
         if (!files || files.length === 0) return;
         if (!selectedBrandForBatch) {
@@ -447,96 +428,103 @@
           return;
         }
         
-        setIsUploadingBatch(true);
-        setBatchProgress({ current: 0, total: files.length, status: 'Préparation...' });
-        
-        let successCount = 0;
-        let errorCount = 0;
-        let createdCount = 0;
-        let updatedCount = 0;
-        
-        let updatedBrands = [...brands];
-        const brandIndex = updatedBrands.findIndex(b => b.id === selectedBrandForBatch);
-        if (brandIndex === -1) {
-          notify("La marque sélectionnée n'existe plus.");
-          setIsUploadingBatch(false);
-          setShowBatchModal(false);
-          return;
-        }
-        
-        const brandName = updatedBrands[brandIndex].name;
-        let currentProducts = updatedBrands[brandIndex].products;
-        
-        for (let i = 0; i < files.length; i++) {
-          const file = files[i];
-          setBatchProgress({ 
-            current: i + 1, 
-            total: files.length, 
-            status: `Traitement de ${file.name}...` 
+        // Bloc try...finally pour garantir la réinitialisation
+        try {
+          setIsUploadingBatch(true);
+          setBatchProgress({ current: 0, total: files.length, status: 'Préparation...' });
+          
+          // Copie locale des marques pour modifications
+          let updatedBrands = [...brands];
+          const brandIndex = updatedBrands.findIndex(b => b.id === selectedBrandForBatch);
+          if (brandIndex === -1) {
+            notify("La marque sélectionnée n'existe plus.");
+            return;
+          }
+          const brandName = updatedBrands[brandIndex].name;
+          let currentProducts = updatedBrands[brandIndex].products;
+          
+          // Préparer les tâches d'upload pour tous les fichiers
+          const uploadTasks = files.map(async (file, index) => {
+            // Mise à jour de la progression
+            setBatchProgress({ current: index + 1, total: files.length, status: `Traitement de ${file.name}...` });
+            
+            try {
+              const baseName = file.name.replace(/\.[^/.]+$/, '').trim();
+              if (!baseName) throw new Error('Nom de fichier invalide');
+              const normalizedBase = normalizeString(baseName);
+              const existingProduct = currentProducts.find(p => normalizeString(p.name) === normalizedBase);
+              const url = await uploadImageAndGetUrl(file, 'products');
+              
+              return { success: true, baseName, url, existingProduct, brandName };
+            } catch (err) {
+              addLog('error', `Erreur pour ${file.name}: ${err.message}`);
+              return { success: false, fileName: file.name, error: err.message };
+            }
           });
           
-          // Petite pause pour permettre à l'UI de se mettre à jour
-          await new Promise(r => setTimeout(r, 10));
+          // Exécution parallèle des uploads
+          const results = await Promise.allSettled(uploadTasks);
           
-          try {
-            const baseName = file.name.replace(/\.[^/.]+$/, '').trim();
-            if (!baseName) throw new Error('Nom de fichier invalide');
-            const normalizedBase = normalizeString(baseName);
-            const existingProduct = currentProducts.find(p => normalizeString(p.name) === normalizedBase);
-            const url = await uploadImageAndGetUrl(file, 'products');
-            
-            if (existingProduct) {
-              const productIdx = currentProducts.findIndex(p => p.id === existingProduct.id);
-              if (productIdx !== -1) {
-                currentProducts[productIdx] = { ...existingProduct, image: url };
-                updatedCount++;
-                notify(`✅ Produit "${existingProduct.name}" mis à jour dans "${brandName}"`);
+          let successCount = 0;
+          let errorCount = 0;
+          let createdCount = 0;
+          let updatedCount = 0;
+          
+          // Traitement des résultats
+          for (const result of results) {
+            if (result.status === 'fulfilled' && result.value.success) {
+              const { baseName, url, existingProduct, brandName: bName } = result.value;
+              if (existingProduct) {
+                const productIdx = currentProducts.findIndex(p => p.id === existingProduct.id);
+                if (productIdx !== -1) {
+                  currentProducts[productIdx] = { ...existingProduct, image: url };
+                  updatedCount++;
+                  notify(`✅ Produit "${existingProduct.name}" mis à jour dans "${bName}"`);
+                }
+              } else {
+                const newProductObj = {
+                  id: Date.now() + Math.random(),
+                  name: baseName,
+                  qty: 0,
+                  price: 0,
+                  image: url
+                };
+                currentProducts.push(newProductObj);
+                createdCount++;
+                notify(`✅ Nouveau produit "${baseName}" créé dans "${bName}"`);
               }
+              successCount++;
             } else {
-              const newProductObj = {
-                id: Date.now() + Math.random(),
-                name: baseName,
-                qty: 0,
-                price: 0,
-                image: url
-              };
-              currentProducts.push(newProductObj);
-              createdCount++;
-              notify(`✅ Nouveau produit "${baseName}" créé dans "${brandName}"`);
+              errorCount++;
             }
-            successCount++;
-          } catch (err) {
-            addLog('error', `Erreur pour ${file.name}: ${err.message}`);
-            notify(`❌ Erreur pour "${file.name}": ${err.message}`);
-            errorCount++;
           }
+          
+          // Mettre à jour les produits dans la copie
+          updatedBrands[brandIndex].products = currentProducts;
+          
+          if (successCount > 0) {
+            setBrands(updatedBrands);
+          }
+          
+          setBatchProgress({ current: files.length, total: files.length, status: 'Terminé' });
+          
+          // Gestion de la fermeture de la modale
+          if (errorCount === 0) {
+            notify(`✅ Import réussi : ${createdCount} créés, ${updatedCount} mis à jour.`);
+            setShowBatchModal(false);
+          } else if (successCount > 0) {
+            const confirmClose = window.confirm(`Import terminé avec ${errorCount} erreur(s). Voulez-vous fermer la fenêtre ?`);
+            if (confirmClose) setShowBatchModal(false);
+          } else {
+            notify(`❌ Aucune image importée (${errorCount} échec(s)).`);
+          }
+        } finally {
+          setIsUploadingBatch(false);
+          setBatchProgress({ current: 0, total: 0, status: '' });
         }
-        
-        // Mettre à jour les produits dans la copie
-        updatedBrands[brandIndex].products = currentProducts;
-        
-        if (successCount > 0) {
-          setBrands(updatedBrands);
-        }
-        
-        setBatchProgress({ current: files.length, total: files.length, status: 'Terminé' });
-        
-        // Gestion de la fermeture de la modale
-        if (errorCount === 0) {
-          notify(`✅ Import réussi : ${createdCount} créés, ${updatedCount} mis à jour.`);
-          setShowBatchModal(false);
-        } else if (successCount > 0) {
-          const confirmClose = window.confirm(`Import terminé avec ${errorCount} erreur(s). Voulez-vous fermer la fenêtre ?`);
-          if (confirmClose) setShowBatchModal(false);
-        } else {
-          notify(`❌ Aucune image importée (${errorCount} échec(s)).`);
-        }
-        
-        setIsUploadingBatch(false);
-        setBatchProgress({ current: 0, total: 0, status: '' });
       };
       
-      // Export/Import Excel
+      // ========== Export/Import Excel (inchangé) ==========
       const exportToExcel = () => {
         if(!window.XLSX){ notify("Excel non chargé"); return; }
         try {
@@ -615,10 +603,7 @@
       
       // Navigation & authentification
       const openBrand = (brand) => {
-        if (!brand || !brand.products || !Array.isArray(brand.products)) {
-          notify("Marque invalide");
-          return;
-        }
+        if (!brand || !brand.products || !Array.isArray(brand.products)) { notify("Marque invalide"); return; }
         setIsTransitioning(true); 
         setTimeout(() => { setSelectedBrand(brand); setCurrentView('brand'); setIsTransitioning(false); }, 300);
       };
@@ -661,12 +646,8 @@
       
       // Export CSV historique
       const exportDeliveredHistory = () => {
-        if (deliveredOrders.length === 0) {
-          notify("Aucune commande livrée à exporter");
-          return;
-        }
-        const rows = [];
-        rows.push(["Date","ID Commande","Client","Téléphone","Marque","Produit","Quantité","Prix Unitaire","Total Ligne","Instructions"]);
+        if (deliveredOrders.length === 0) { notify("Aucune commande livrée à exporter"); return; }
+        const rows = [["Date","ID Commande","Client","Téléphone","Marque","Produit","Quantité","Prix Unitaire","Total Ligne","Instructions"]];
         deliveredOrders.forEach(order => {
           const delivery = order.delivery || {};
           const timestamp = order.timestamp || "";
@@ -688,9 +669,7 @@
         const escapeCSV = (value) => {
           if (value === undefined || value === null) return "";
           const str = String(value);
-          if (str.includes(",") || str.includes("\"") || str.includes("\n")) {
-            return `"${str.replace(/"/g, "\"\"")}"`;
-          }
+          if (str.includes(",") || str.includes("\"") || str.includes("\n")) return `"${str.replace(/"/g, "\"\"")}"`;
           return str;
         };
         const csvContent = rows.map(row => row.map(escapeCSV).join(",")).join("\n");
@@ -705,30 +684,22 @@
         URL.revokeObjectURL(url);
         notify("Export CSV terminé");
       };
-      
       const clearDeliveredHistory = () => {
-        if (deliveredOrders.length === 0) {
-          notify("Aucune commande livrée à supprimer");
-          return;
-        }
+        if (deliveredOrders.length === 0) { notify("Aucune commande livrée à supprimer"); return; }
         requestConfirm("clearDelivered", null, () => {
           const remainingOrders = orders.filter(o => o.status !== "delivered");
           setOrders(remainingOrders);
           notify("Historique des commandes livrées vidé");
         });
       };
-      
       const cleanOldOrders = () => {
         const newOrders = cleanOldDeliveredOrders(orders, 3);
         if (newOrders.length !== orders.length) {
           setOrders(newOrders);
           notify(`${orders.length - newOrders.length} commandes livrées de plus de 3 mois supprimées.`);
-        } else {
-          notify("Aucune commande ancienne à supprimer.");
-        }
+        } else { notify("Aucune commande ancienne à supprimer."); }
       };
       
-      // Composant DebugConsole
       const DebugConsole = () => {
         const copyLogs = async () => {
           const text = logs.map(l => `[${l.timestamp}] ${l.type.toUpperCase()}: ${l.message}`).join('\n');
@@ -767,7 +738,6 @@
       const safeBrands = Array.isArray(brands) ? brands : [];
       const safeSelectedBrand = selectedBrand && selectedBrand.products && Array.isArray(selectedBrand.products) ? selectedBrand : null;
       
-      // Rendu principal avec logo centré et bouton retour visible
       return (
         <div className="fixed inset-0 bg-slate-900 flex justify-center font-sans">
           {notification && <div className="fixed top-6 z-[100] bg-slate-800 text-slate-100 px-6 py-3 rounded-full text-xs font-bold shadow-2xl animate-fade-in-down border border-indigo-500/30">{notification}</div>}
@@ -788,7 +758,6 @@
               </div>
             </div>
             
-            {/* Contenu principal (identique à la version précédente) */}
             {currentView === 'home' ? (isAdmin ? (
               <div className="grid grid-cols-2 gap-3">
                 <button onClick={() => setShowModal(true)} className="min-h-[48px] flex flex-col items-center justify-center gap-1 p-3 bg-slate-800 border border-slate-700 rounded-xl shadow-sm hover:shadow-lg hover:shadow-indigo-500/10 transition-all duration-200 active:scale-95 text-slate-100 font-medium"><span className="text-xl">🏷️</span><span className="text-sm">Ajouter une marque</span></button>
@@ -1057,7 +1026,6 @@
               </div>
             )}
             
-            {/* MODALE POUR LE LOT DE PRODUITS AVEC PROGRESSION */}
             {showBatchModal && (
               <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
                 <div className="bg-slate-800 w-full max-w-[340px] rounded-2xl p-6 shadow-2xl border border-slate-700">
