@@ -3,11 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-  <title>MarketHub - Gestion B2B</title>
-  <!-- PWA manifest -->
+  <title>LD Holding - Gestion B2B</title>
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#0f172a">
-  <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
@@ -19,20 +17,16 @@
       }
     }
   </script>
-  <!-- Firebase -->
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
-  <!-- SheetJS -->
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-storage-compat.js"></script>
   <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
-  <!-- React, ReactDOM, Babel -->
   <script src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.development.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.development.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@babel/standalone/babel.min.js"></script>
 </head>
 <body class="bg-slate-900">
   <div id="root"></div>
-
-  <!-- Enregistrement du Service Worker -->
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
@@ -44,7 +38,6 @@
   </script>
 
   <script type="text/babel" data-presets="react,env">
-    // ==================== CODE REACT COMPLET ====================
     const { useState, useEffect, useCallback, useRef } = React;
 
     class ErrorBoundary extends React.Component {
@@ -60,7 +53,60 @@
       }
     }
 
-    // Nettoyage des marques (supprime les entrées invalides)
+    const processImage = (file) => {
+      return new Promise((resolve, reject) => {
+        if (!file.type.startsWith('image/')) {
+          reject(new Error('Le fichier n\'est pas une image valide.'));
+          return;
+        }
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const img = new Image();
+          img.onload = () => {
+            const maxWidth = 800;
+            let width = img.width;
+            let height = img.height;
+            if (width > maxWidth) {
+              height = (height * maxWidth) / width;
+              width = maxWidth;
+            }
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, width, height);
+            canvas.toBlob(
+              (blob) => {
+                if (blob) resolve(blob);
+                else reject(new Error('Échec de la conversion en WebP.'));
+              },
+              'image/webp',
+              0.8
+            );
+          };
+          img.onerror = () => reject(new Error('Erreur lors du chargement de l\'image.'));
+          img.src = e.target.result;
+        };
+        reader.onerror = () => reject(new Error('Erreur lors de la lecture du fichier.'));
+        reader.readAsDataURL(file);
+      });
+    };
+
+    const uploadImageAndGetUrl = async (file, pathPrefix = 'products') => {
+      try {
+        const processedBlob = await processImage(file);
+        const fileName = `${pathPrefix}_${Date.now()}_${Math.random().toString(36).substr(2, 8)}.webp`;
+        const storageRef = window.firebase.storage().ref();
+        const fileRef = storageRef.child(fileName);
+        const snapshot = await fileRef.put(processedBlob);
+        const url = await snapshot.ref.getDownloadURL();
+        return url;
+      } catch (err) {
+        console.error('Upload échoué:', err);
+        throw err;
+      }
+    };
+
     const cleanBrands = (brandsArray) => {
       if (!Array.isArray(brandsArray)) return [];
       return brandsArray.filter(b => 
@@ -74,14 +120,11 @@
       }));
     };
 
-    // Nettoyage des commandes : garantit que items est un tableau et que chaque item a les bonnes propriétés
     const cleanOrders = (ordersArray) => {
       if (!Array.isArray(ordersArray)) return [];
       return ordersArray.filter(o => o && typeof o === 'object').map(o => {
         let items = o.items;
-        if (!Array.isArray(items)) {
-          items = Object.values(items || {});
-        }
+        if (!Array.isArray(items)) items = Object.values(items || {});
         items = items.filter(i => i && i.product && i.product.name);
         return {
           ...o,
@@ -90,6 +133,22 @@
           delivery: o.delivery || { name: '', phone: '', address: '', instructions: '' },
           status: o.status || 'new'
         };
+      });
+    };
+
+    const cleanOldDeliveredOrders = (orders, months = 3) => {
+      const now = new Date();
+      const cutoff = new Date(now.setMonth(now.getMonth() - months));
+      return orders.filter(order => {
+        if (order.status !== 'delivered') return true;
+        let date = new Date(order.timestamp);
+        if (isNaN(date)) {
+          const parts = order.timestamp.split(/[ ,/:]+/);
+          if (parts.length >= 3) {
+            date = new Date(`${parts[2]}-${parts[1]}-${parts[0]}T${parts[3]}:${parts[4]}:${parts[5]}`);
+          }
+        }
+        return date > cutoff;
       });
     };
 
@@ -114,14 +173,13 @@
       const [pinCode, setPinCode] = useState('');
       const [showPrices, setShowPrices] = useState(true);
       
-      // Initialisation avec nettoyage
       const [brands, setBrands] = useState(() => {
         const saved = localStorage.getItem('marketHubBrands');
         const parsed = saved ? JSON.parse(saved) : [];
         return cleanBrands(parsed);
       });
-      const [newBrand, setNewBrand] = useState({ name: "", image: null });
-      const [newProduct, setNewProduct] = useState({ name: "", qty: "", price: "", image: null, brandId: null });
+      const [newBrand, setNewBrand] = useState({ name: "", imageFile: null });
+      const [newProduct, setNewProduct] = useState({ name: "", qty: "", price: "", imageFile: null, brandId: null });
       const [cart, setCart] = useState(() => {
         const savedCart = localStorage.getItem('marketHubCart');
         const parsed = savedCart ? JSON.parse(savedCart) : [];
@@ -146,6 +204,9 @@
       const firebaseInitialized = useRef(false);
       const [firebaseReady, setFirebaseReady] = useState(false);
       const initialLoadDone = useRef(false);
+      
+      const brandsTimeoutRef = useRef(null);
+      const ordersTimeoutRef = useRef(null);
       
       const addLog = useCallback((type, ...args) => {
         const timestamp = new Date().toLocaleTimeString();
@@ -172,7 +233,6 @@
         };
       }, [addLog]);
       
-      // Firebase init
       useEffect(() => {
         let mounted = true;
         const initFirebase = () => {
@@ -189,7 +249,7 @@
               };
               if (!window.firebase.apps.length) window.firebase.initializeApp(firebaseConfig);
               firebaseInitialized.current = true;
-              addLog('log', 'Firebase initialisé');
+              addLog('log', 'Firebase initialisé (App, DB, Storage)');
               if (mounted) setFirebaseReady(true);
             } else {
               if (mounted) setFirebaseReady(true);
@@ -201,7 +261,6 @@
         return () => { mounted = false; };
       }, [addLog]);
       
-      // Chargement Firebase avec nettoyage
       useEffect(() => {
         if (!firebaseReady || !window.firebase || initialLoadDone.current) return;
         const db = window.firebase.database();
@@ -213,7 +272,7 @@
             const cleaned = cleanBrands(raw);
             setBrands(cleaned);
             localStorage.setItem('marketHubBrands', JSON.stringify(cleaned));
-            addLog('log', 'Brands chargés et nettoyés');
+            addLog('log', 'Brands chargés');
           }
           if (data?.orders) {
             let rawOrders = data.orders;
@@ -221,7 +280,7 @@
             const cleanedOrders = cleanOrders(rawOrders);
             setOrders(cleanedOrders);
             localStorage.setItem('marketHubOrders', JSON.stringify(cleanedOrders));
-            addLog('log', 'Orders chargés et nettoyés');
+            addLog('log', 'Orders chargés');
           }
           initialLoadDone.current = true;
           setIsLoading(false);
@@ -232,82 +291,127 @@
         });
       }, [firebaseReady]);
       
-      // Sauvegardes Firebase
       useEffect(() => {
         if (!firebaseReady || !initialLoadDone.current) return;
-        window.firebase.database().ref('data').set(brands).catch(err => addLog('error', err.message));
+        if (brandsTimeoutRef.current) clearTimeout(brandsTimeoutRef.current);
+        brandsTimeoutRef.current = setTimeout(() => {
+          window.firebase.database().ref('data').set(brands).catch(err => addLog('error', err.message));
+        }, 500);
       }, [brands, firebaseReady]);
       useEffect(() => {
         if (!firebaseReady || !initialLoadDone.current) return;
-        window.firebase.database().ref('orders').set(orders).catch(err => addLog('error', err.message));
+        if (ordersTimeoutRef.current) clearTimeout(ordersTimeoutRef.current);
+        ordersTimeoutRef.current = setTimeout(() => {
+          window.firebase.database().ref('orders').set(orders).catch(err => addLog('error', err.message));
+        }, 500);
       }, [orders, firebaseReady]);
       
-      // Sauvegardes locales
       useEffect(() => { localStorage.setItem('marketHubCart', JSON.stringify(cart)); }, [cart]);
       useEffect(() => { localStorage.setItem('marketHubBrands', JSON.stringify(brands)); }, [brands]);
       useEffect(() => { localStorage.setItem('marketHubOrders', JSON.stringify(orders)); }, [orders]);
       
       const notify = (msg) => { setNotification(msg); setTimeout(() => setNotification(null), 2000); };
       
-      const handleImageUpload = (e, setter, state) => {
-        const file = e.target.files[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = (ev) => {
-          const img = new Image();
-          img.onload = () => {
-            const canvas = document.createElement('canvas');
-            const size = 300;
-            canvas.width = size; canvas.height = size;
-            const ctx = canvas.getContext('2d');
-            const ratio = Math.max(size / img.width, size / img.height);
-            const w = img.width * ratio, h = img.height * ratio;
-            ctx.drawImage(img, (size - w)/2, (size - h)/2, w, h);
-            setter({ ...state, image: canvas.toDataURL('image/jpeg', 0.9) });
+      const addBrand = async () => {
+        if (newBrand.name && newBrand.name.trim()) {
+          let imageUrl = null;
+          if (newBrand.imageFile) {
+            try {
+              imageUrl = await uploadImageAndGetUrl(newBrand.imageFile, 'brands');
+            } catch (err) {
+              addLog('error', 'Upload image marque échoué: ' + err.message);
+              notify("Erreur lors de l'upload de l'image");
+              return;
+            }
+          }
+          const newBrandObj = {
+            id: Date.now(),
+            name: newBrand.name.trim(),
+            image: imageUrl,
+            products: []
           };
-          img.src = ev.target.result;
-        };
-        reader.readAsDataURL(file);
+          setBrands([...brands, newBrandObj]);
+          setNewBrand({ name: "", imageFile: null });
+          setShowModal(false);
+          notify("Marque ajoutée");
+        } else {
+          notify("Nom requis");
+        }
       };
       
-      const addBrand = () => { 
-        if(newBrand.name && newBrand.name.trim()){ 
-          const newId = Date.now();
-          setBrands([...brands, { id: newId, name: newBrand.name.trim(), image: newBrand.image, products: [] }]); 
-          setNewBrand({ name:"", image:null }); 
-          setShowModal(false); 
-          notify("Marque ajoutée"); 
-        } else { notify("Nom requis"); }
-      };
       const deleteBrand = (id) => { setBrands(brands.filter(b => b.id !== id)); notify("Marque supprimée"); };
-      const saveBrandEdit = () => { 
-        if(editingBrand.name && editingBrand.name.trim()){
-          setBrands(brands.map(b => b.id === editingBrand.id ? {...editingBrand, name: editingBrand.name.trim()} : b)); 
-          setEditingBrand(null); 
+      
+      const saveBrandEdit = async () => {
+        if (editingBrand.name && editingBrand.name.trim()) {
+          let imageUrl = editingBrand.image;
+          if (editingBrand.imageFile) {
+            try {
+              imageUrl = await uploadImageAndGetUrl(editingBrand.imageFile, 'brands');
+            } catch (err) {
+              addLog('error', 'Upload image marque échoué: ' + err.message);
+              notify("Erreur lors de l'upload de l'image");
+              return;
+            }
+          }
+          setBrands(brands.map(b => b.id === editingBrand.id ? {...editingBrand, name: editingBrand.name.trim(), image: imageUrl} : b));
+          setEditingBrand(null);
           notify("Marque mise à jour");
-        } else { notify("Nom requis"); }
+        } else {
+          notify("Nom requis");
+        }
       };
-      const addProduct = () => { 
-        if(newProduct.name && newProduct.name.trim() && newProduct.brandId){ 
-          setBrands(brands.map(b => b.id === newProduct.brandId ? { 
-            ...b, 
-            products: [...b.products, { id: Date.now(), name: newProduct.name.trim(), qty: newProduct.qty, price: newProduct.price, image: newProduct.image }] 
-          } : b)); 
-          setNewProduct({ name:"", qty:"", price:"", image:null, brandId:null }); 
-          setShowProductModal(false); 
-          notify("Produit ajouté"); 
-        } else { notify("Nom et marque requis"); }
+      
+      const addProduct = async () => {
+        if (newProduct.name && newProduct.name.trim() && newProduct.brandId) {
+          let imageUrl = null;
+          if (newProduct.imageFile) {
+            try {
+              imageUrl = await uploadImageAndGetUrl(newProduct.imageFile, 'products');
+            } catch (err) {
+              addLog('error', 'Upload image produit échoué: ' + err.message);
+              notify("Erreur lors de l'upload de l'image");
+              return;
+            }
+          }
+          const newProductObj = {
+            id: Date.now(),
+            name: newProduct.name.trim(),
+            qty: newProduct.qty,
+            price: newProduct.price,
+            image: imageUrl
+          };
+          setBrands(brands.map(b => b.id === newProduct.brandId ? { ...b, products: [...b.products, newProductObj] } : b));
+          setNewProduct({ name: "", qty: "", price: "", imageFile: null, brandId: null });
+          setShowProductModal(false);
+          notify("Produit ajouté");
+        } else {
+          notify("Nom et marque requis");
+        }
       };
-      const saveProductEdit = () => { 
-        if(editingProduct.name && editingProduct.name.trim()){
-          setBrands(brands.map(b => ({ 
-            ...b, 
-            products: b.products.map(p => p.id === editingProduct.id ? {...editingProduct, name: editingProduct.name.trim()} : p) 
-          }))); 
-          setEditingProduct(null); 
+      
+      const saveProductEdit = async () => {
+        if (editingProduct.name && editingProduct.name.trim()) {
+          let imageUrl = editingProduct.image;
+          if (editingProduct.imageFile) {
+            try {
+              imageUrl = await uploadImageAndGetUrl(editingProduct.imageFile, 'products');
+            } catch (err) {
+              addLog('error', 'Upload image produit échoué: ' + err.message);
+              notify("Erreur lors de l'upload de l'image");
+              return;
+            }
+          }
+          setBrands(brands.map(b => ({
+            ...b,
+            products: b.products.map(p => p.id === editingProduct.id ? {...editingProduct, name: editingProduct.name.trim(), image: imageUrl} : p)
+          })));
+          setEditingProduct(null);
           notify("Produit modifié");
-        } else { notify("Nom requis"); }
+        } else {
+          notify("Nom requis");
+        }
       };
+      
       const deleteProduct = (brandId, productId) => { 
         setBrands(brands.map(b => b.id === brandId ? { ...b, products: b.products.filter(p => p.id !== productId) } : b)); 
         notify("Produit supprimé"); 
@@ -433,6 +537,74 @@
       const cancelConfirm = () => setConfirmAction(null);
       const executeConfirm = () => { if(confirmAction?.callback) confirmAction.callback(); setConfirmAction(null); };
       
+      const exportDeliveredHistory = () => {
+        if (deliveredOrders.length === 0) {
+          notify("Aucune commande livrée à exporter");
+          return;
+        }
+        const rows = [];
+        rows.push(["Date","ID Commande","Client","Téléphone","Marque","Produit","Quantité","Prix Unitaire","Total Ligne","Instructions"]);
+        deliveredOrders.forEach(order => {
+          const delivery = order.delivery || {};
+          const timestamp = order.timestamp || "";
+          const orderId = order.id || "";
+          const client = delivery.name || "";
+          const phone = delivery.phone || "";
+          const instructions = delivery.instructions || "";
+          const items = order.items || [];
+          items.forEach(item => {
+            const product = item.product || {};
+            const brandName = item.brandName || "";
+            const productName = product.name || "";
+            const quantity = item.quantity || 0;
+            const unitPrice = product.price || 0;
+            const lineTotal = unitPrice * quantity;
+            rows.push([timestamp, orderId, client, phone, brandName, productName, quantity, unitPrice, lineTotal, instructions]);
+          });
+        });
+        const escapeCSV = (value) => {
+          if (value === undefined || value === null) return "";
+          const str = String(value);
+          if (str.includes(",") || str.includes("\"") || str.includes("\n")) {
+            return `"${str.replace(/"/g, "\"\"")}"`;
+          }
+          return str;
+        };
+        const csvContent = rows.map(row => row.map(escapeCSV).join(",")).join("\n");
+        const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8;" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `commandes_livrees_${new Date().toISOString().slice(0, 19)}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        notify("Export CSV terminé");
+      };
+      
+      const clearDeliveredHistory = () => {
+        if (deliveredOrders.length === 0) {
+          notify("Aucune commande livrée à supprimer");
+          return;
+        }
+        requestConfirm("clearDelivered", null, () => {
+          const remainingOrders = orders.filter(o => o.status !== "delivered");
+          setOrders(remainingOrders);
+          notify("Historique des commandes livrées vidé");
+        });
+      };
+      
+      const cleanOldOrders = () => {
+        const newOrders = cleanOldDeliveredOrders(orders, 3);
+        if (newOrders.length !== orders.length) {
+          setOrders(newOrders);
+          notify(`${orders.length - newOrders.length} commandes livrées de plus de 3 mois supprimées.`);
+        } else {
+          notify("Aucune commande ancienne à supprimer.");
+        }
+      };
+      
       const DebugConsole = () => {
         const copyLogs = async () => {
           const text = logs.map(l => `[${l.timestamp}] ${l.type.toUpperCase()}: ${l.message}`).join('\n');
@@ -466,12 +638,22 @@
       const safeBrands = Array.isArray(brands) ? brands : [];
       const safeSelectedBrand = selectedBrand && selectedBrand.products && Array.isArray(selectedBrand.products) ? selectedBrand : null;
       
+      const FileInput = ({ onFileSelect, label }) => React.createElement('div', { className: 'mb-4' },
+        React.createElement('label', { className: 'block text-[9px] uppercase font-bold text-slate-400 tracking-wider mb-1' }, label),
+        React.createElement('input', { type: 'file', accept: 'image/*', onChange: (e) => onFileSelect(e.target.files[0]), className: 'w-full text-sm text-slate-400 file:mr-2 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-sm file:bg-slate-700 file:text-slate-200 hover:file:bg-slate-600' })
+      );
+      
       return (
         <div className="fixed inset-0 bg-slate-900 flex justify-center font-sans">
           {notification && <div className="fixed top-6 z-[100] bg-slate-800 text-slate-100 px-6 py-3 rounded-full text-xs font-bold shadow-2xl animate-fade-in-down border border-indigo-500/30">{notification}</div>}
           <div className={`w-full h-full overflow-y-auto p-4 transition-opacity duration-300 ${isTransitioning ? 'opacity-0' : 'opacity-100'}`}>
             <div className="flex justify-between items-center mb-8 mt-2">
-              <button onClick={goHome} className="text-slate-400 text-[11px] font-medium tracking-tight hover:text-slate-200">{currentView === 'home' ? 'LAICHE HOLDING' : '← Retour'}</button>
+              {/* Logo LD Holding à la place du texte */}
+              <img 
+                src="LDHOLDING-removebg-preview.png" 
+                alt="LD Holding" 
+                className="h-[60px] w-auto object-contain"
+              />
               <div className="flex items-center gap-2">
                 {isAdmin && (
                   <button onClick={() => setShowPrices(!showPrices)} className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition-all active:scale-95 ${showPrices ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-300'}`} title={showPrices ? "Masquer les prix" : "Afficher les prix"}>{showPrices ? 'DZD' : 'DZD\u0337'}</button>
@@ -507,13 +689,12 @@
                       {prod.image ? <img src={prod.image} className="w-full h-full object-cover" /> : <div className="w-full h-full bg-slate-700 flex items-center justify-center text-[10px] text-slate-400 font-medium">PROD</div>}
                     </button>
                     <span className="text-slate-200 font-medium text-xs text-center px-1">{prod.name}</span>
-                    {showPrices ? <span className="text-indigo-400 font-bold text-sm bg-slate-800 px-3 py-1 rounded-full">{prod.price} DZD</span> : <span className="text-slate-500 font-bold text-sm bg-slate-800 px-3 py-1 rounded-full">•••</span>}
+                    {showPrices && <span className="text-indigo-400 font-bold text-sm bg-slate-800 px-3 py-1 rounded-full">{prod.price} DZD</span>}
                   </div>
                 ))}
               </div>
             )}
             
-            {/* Modale PIN */}
             {showPinModal && (
               <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center p-4 z-50">
                 <div className="bg-slate-800 w-full max-w-[320px] rounded-2xl shadow-2xl p-6 border border-slate-700">
@@ -531,7 +712,6 @@
               </div>
             )}
             
-            {/* Bouton panier (client) */}
             {!isAdmin && (
               <div className="fixed bottom-0 left-0 right-0 flex justify-center pointer-events-none z-40">
                 <div className="w-full max-w-[360px] px-4 pb-4 pointer-events-auto">
@@ -543,14 +723,13 @@
               </div>
             )}
             
-            {/* Modale produit */}
             {selectedProduct && !isAdmin && (
               <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 z-50">
                 <div className="bg-slate-800 w-full max-w-[320px] rounded-3xl overflow-hidden shadow-2xl border border-slate-700">
                   <div className="aspect-square bg-slate-700">{selectedProduct.image ? <img src={selectedProduct.image} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-slate-400 text-sm">Pas d'image</div>}</div>
                   <div className="p-5">
                     <h3 className="text-xl font-bold text-slate-100">{selectedProduct.name}</h3>
-                    <p className="text-slate-400 text-sm mt-1">Prix unitaire : {showPrices ? `${selectedProduct.price} DZD` : '•••'}</p>
+                    {showPrices && <p className="text-slate-400 text-sm mt-1">Prix unitaire : {selectedProduct.price} DZD</p>}
                     <div className="flex items-center justify-between mt-4">
                       <span className="text-slate-300 font-medium">Quantité</span>
                       <div className="flex items-center gap-3">
@@ -559,14 +738,15 @@
                         <button onClick={() => setProductQuantity(productQuantity+1)} className="w-8 h-8 bg-slate-700 rounded-full font-bold text-slate-200 active:scale-95">+</button>
                       </div>
                     </div>
-                    <button onClick={addToCart} className="w-full mt-6 py-3 bg-indigo-600 text-white rounded-xl font-bold active:scale-95 hover:bg-indigo-500">Ajouter au panier {showPrices ? `· ${(selectedProduct.price * productQuantity).toFixed(2)} DZD` : ''}</button>
+                    <button onClick={addToCart} className="w-full mt-6 py-3 bg-indigo-600 text-white rounded-xl font-bold active:scale-95 hover:bg-indigo-500">
+                      Ajouter au panier {showPrices && `· ${(selectedProduct.price * productQuantity).toFixed(2)} DZD`}
+                    </button>
                     <button onClick={() => setSelectedProduct(null)} className="w-full mt-3 py-2 bg-slate-700 text-slate-300 rounded-xl text-sm active:scale-95 hover:bg-slate-600">Fermer</button>
                   </div>
                 </div>
               </div>
             )}
             
-            {/* Modale panier */}
             {showCartModal && !isAdmin && (
               <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
                 <div className="bg-slate-800 w-full max-w-[340px] rounded-2xl shadow-2xl max-h-[80vh] flex flex-col border border-slate-700">
@@ -579,7 +759,7 @@
                             <div className="w-12 h-12 bg-slate-700 rounded-lg overflow-hidden flex-shrink-0">{item.product.image ? <img src={item.product.image} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-[8px] text-slate-500">img</div>}</div>
                             <div className="flex-1">
                               <p className="font-semibold text-slate-100 text-sm">{item.product.name}</p>
-                              <p className="text-slate-400 text-xs">{item.brandName} · {item.quantity} × {showPrices ? `${item.product.price} DZD` : '•••'}</p>
+                              <p className="text-slate-400 text-xs">{item.brandName} · {item.quantity} × {showPrices ? `${item.product.price} DZD` : ''}</p>
                               {showPrices && <p className="text-indigo-400 text-xs font-bold">{(item.product.price * item.quantity).toFixed(2)} DZD</p>}
                             </div>
                             <button onClick={() => removeFromCart(idx)} className="w-8 h-8 bg-red-900/50 text-red-300 rounded-full font-bold active:scale-95 hover:bg-red-800/50">✕</button>
@@ -598,7 +778,6 @@
               </div>
             )}
             
-            {/* Modale livraison */}
             {showDeliveryModal && !isAdmin && (
               <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
                 <div className="bg-slate-800 w-full max-w-[340px] rounded-2xl shadow-2xl p-6 border border-slate-700">
@@ -614,7 +793,6 @@
               </div>
             )}
             
-            {/* Modale commandes admin (sécurisée) */}
             {showOrdersModal && isAdmin && (
               <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
                 <div className="bg-slate-800 w-full max-w-[340px] rounded-2xl shadow-2xl max-h-[85vh] flex flex-col border border-slate-700">
@@ -625,7 +803,7 @@
                     <button onClick={() => setOrdersActiveTab("delivered")} className={`flex-1 py-3 text-xs font-medium ${ordersActiveTab==="delivered"?"text-indigo-400 border-b-2 border-indigo-400":"text-slate-400"}`}>Livrées ({deliveredOrders.length})</button>
                   </div>
                   <div className="flex-1 overflow-y-auto p-3">
-                    {ordersActiveTab==="new" && (newOrders.length===0?<p className="text-center text-slate-400 py-4">Aucune nouvelle commande</p>:newOrders.map(order=>{
+                    {ordersActiveTab === "new" && (newOrders.length===0?<p className="text-center text-slate-400 py-4">Aucune nouvelle commande</p>:newOrders.map(order=>{
                       const safeItems = Array.isArray(order.items) ? order.items : [];
                       return (
                         <div key={order.id} className="mb-4 p-3 bg-slate-700/50 rounded-xl border border-slate-600">
@@ -649,7 +827,7 @@
                         </div>
                       );
                     }))}
-                    {ordersActiveTab==="processed" && (processedOrders.length===0?<p className="text-center text-slate-400 py-4">Aucune commande traitée</p>:processedOrders.map(order=>{
+                    {ordersActiveTab === "processed" && (processedOrders.length===0?<p className="text-center text-slate-400 py-4">Aucune commande traitée</p>:processedOrders.map(order=>{
                       const safeItems = Array.isArray(order.items) ? order.items : [];
                       return (
                         <div key={order.id} className="mb-4 p-3 bg-slate-700/50 rounded-xl border border-slate-600">
@@ -673,36 +851,44 @@
                         </div>
                       );
                     }))}
-                    {ordersActiveTab==="delivered" && (deliveredOrders.length===0?<p className="text-center text-slate-400 py-4">Aucune commande livrée</p>:deliveredOrders.map(order=>{
-                      const safeItems = Array.isArray(order.items) ? order.items : [];
-                      return (
-                        <div key={order.id} className="mb-4 p-3 bg-slate-700/50 rounded-xl border border-slate-600 opacity-75">
-                          <div className="text-xs text-slate-400 mb-1">{order.timestamp}</div>
-                          <div className="font-semibold text-slate-100">{order.delivery?.name || 'Nom inconnu'}</div>
-                          <div className="text-xs text-slate-300">{order.delivery?.address || ''}</div>
-                          {order.delivery?.phone && <div className="text-xs text-slate-300">📞 {order.delivery.phone}</div>}
-                          {order.delivery?.instructions && <div className="text-xs italic text-slate-400 mt-1">📝 {order.delivery.instructions}</div>}
-                          <div className="mt-2 space-y-1">
-                            {safeItems.map((item,idx)=>(
-                              <div key={idx} className="flex justify-between text-xs text-slate-300">
-                                <span>{item.quantity}× {item.product?.name || 'Produit supprimé'}</span>
-                                {showPrices && item.product?.price ? <span>{(item.product.price * item.quantity).toFixed(2)} DZD</span> : <span>•••</span>}
-                              </div>
-                            ))}
-                          </div>
-                          <div className="flex justify-between items-center mt-2 pt-2 border-t border-slate-600">
-                            {showPrices ? <span className="font-bold text-indigo-400">Total : {order.total?.toFixed(2) || '0.00'} DZD</span> : <span className="font-bold text-slate-400">Total : •••</span>}
-                            <span className="text-xs text-emerald-400">Livrée</span>
-                          </div>
+                    {ordersActiveTab === "delivered" && (
+                      <div>
+                        <div className="flex justify-end gap-2 mb-3">
+                          <button onClick={cleanOldOrders} className="px-3 py-1 bg-yellow-600 text-white rounded-lg text-xs font-bold hover:bg-yellow-500">Nettoyer (3 mois)</button>
+                          <button onClick={exportDeliveredHistory} className="px-3 py-1 bg-indigo-600 text-white rounded-lg text-xs font-bold hover:bg-indigo-500">Historique (CSV)</button>
+                          <button onClick={clearDeliveredHistory} className="px-3 py-1 bg-red-700 text-white rounded-lg text-xs font-bold hover:bg-red-600">Tout vider</button>
                         </div>
-                      );
-                    }))}
+                        {deliveredOrders.length === 0 ? <p className="text-center text-slate-400 py-4">Aucune commande livrée</p> : deliveredOrders.map(order=>{
+                          const safeItems = Array.isArray(order.items) ? order.items : [];
+                          return (
+                            <div key={order.id} className="mb-4 p-3 bg-slate-700/50 rounded-xl border border-slate-600 opacity-75">
+                              <div className="text-xs text-slate-400 mb-1">{order.timestamp}</div>
+                              <div className="font-semibold text-slate-100">{order.delivery?.name || 'Nom inconnu'}</div>
+                              <div className="text-xs text-slate-300">{order.delivery?.address || ''}</div>
+                              {order.delivery?.phone && <div className="text-xs text-slate-300">📞 {order.delivery.phone}</div>}
+                              {order.delivery?.instructions && <div className="text-xs italic text-slate-400 mt-1">📝 {order.delivery.instructions}</div>}
+                              <div className="mt-2 space-y-1">
+                                {safeItems.map((item,idx)=>(
+                                  <div key={idx} className="flex justify-between text-xs text-slate-300">
+                                    <span>{item.quantity}× {item.product?.name || 'Produit supprimé'}</span>
+                                    {showPrices && item.product?.price ? <span>{(item.product.price * item.quantity).toFixed(2)} DZD</span> : <span>•••</span>}
+                                  </div>
+                                ))}
+                              </div>
+                              <div className="flex justify-between items-center mt-2 pt-2 border-t border-slate-600">
+                                {showPrices ? <span className="font-bold text-indigo-400">Total : {order.total?.toFixed(2) || '0.00'} DZD</span> : <span className="font-bold text-slate-400">Total : •••</span>}
+                                <span className="text-xs text-emerald-400">Livrée</span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
             )}
             
-            {/* Modale données */}
             {showDataModal && isAdmin && (
               <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
                 <div className="bg-slate-800 w-full max-w-[340px] rounded-2xl p-6 shadow-2xl border border-slate-700">
@@ -735,7 +921,6 @@
               </div>
             )}
             
-            {/* Modales admin (ajout / gestion / édition) */}
             {(showModal || showProductModal || showBrandSelect || showManageModal || editingBrand) && (
               <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
                 <div className="bg-slate-800 w-full p-6 rounded-[28px] border border-slate-700 shadow-2xl max-h-[80vh] overflow-y-auto">
@@ -745,8 +930,7 @@
                       <h2 className="text-slate-100 font-bold mb-6 text-lg border-l-4 border-indigo-500 pl-3">Modifier Marque</h2>
                       <label className="text-[9px] uppercase font-bold text-slate-400">Nom</label>
                       <input type="text" className="w-full p-3 mb-4 bg-slate-900 rounded-lg outline-none focus:ring-1 focus:ring-indigo-500 text-slate-100" value={editingBrand.name} onChange={e=>setEditingBrand({...editingBrand, name:e.target.value})} />
-                      <label className="text-[9px] uppercase font-bold text-slate-400">Image</label>
-                      <input type="file" accept="image/*" onChange={e=>handleImageUpload(e, setEditingBrand, editingBrand)} className="mb-8 w-full text-sm text-slate-400" />
+                      <FileInput onFileSelect={(file) => setEditingBrand({...editingBrand, imageFile: file})} label="Nouvelle image (optionnel)" />
                       <div className="flex gap-3"><button onClick={()=>setEditingBrand(null)} className="flex-1 py-3 bg-slate-700 rounded-xl font-medium text-slate-200">Annuler</button><button onClick={()=>requestConfirm("saveBrand",null,saveBrandEdit)} className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-medium">Enregistrer</button></div>
                     </>
                   )}
@@ -755,8 +939,7 @@
                       <h2 className="text-slate-100 font-bold mb-6 text-lg border-l-4 border-indigo-500 pl-3">Nouvelle Marque</h2>
                       <label className="text-[9px] uppercase font-bold text-slate-400">Nom</label>
                       <input type="text" className="w-full p-3 mb-4 bg-slate-900 rounded-lg outline-none focus:ring-1 focus:ring-indigo-500 text-slate-100" value={newBrand.name} onChange={e=>setNewBrand({...newBrand, name:e.target.value})} />
-                      <label className="text-[9px] uppercase font-bold text-slate-400">Image</label>
-                      <input type="file" accept="image/*" onChange={e=>handleImageUpload(e, setNewBrand, newBrand)} className="mb-8 w-full text-sm text-slate-400" />
+                      <FileInput onFileSelect={(file) => setNewBrand({...newBrand, imageFile: file})} label="Image (optionnel)" />
                       <div className="flex gap-3"><button onClick={()=>setShowModal(false)} className="flex-1 py-3 bg-slate-700 rounded-xl font-medium text-slate-200">Annuler</button><button onClick={()=>requestConfirm("addBrand",null,addBrand)} className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-medium">Créer</button></div>
                     </>
                   )}
@@ -772,7 +955,6 @@
                                 <button onClick={()=>requestConfirm("deleteBrand",{brandId:b.id},()=>deleteBrand(b.id))} className="px-3 py-1.5 bg-red-900/50 text-red-300 rounded-lg text-xs font-bold">✕ Supprimer</button>
                                 <button onClick={()=>setEditingBrand(b)} className="px-3 py-1.5 bg-slate-700 text-slate-200 rounded-lg text-xs font-bold">✎ Modifier</button>
                               </div>
-                              {/* Liste des produits avec formulaire d'édition positionné sous chaque produit */}
                               {b.products.map(p => (
                                 <React.Fragment key={p.id}>
                                   <div className="flex items-center gap-2 mb-2">
@@ -791,8 +973,7 @@
                                       <input type="number" value={editingProduct.qty} className="w-full p-2 mb-2 bg-slate-800 rounded-lg border border-slate-700 text-slate-100" onChange={e => setEditingProduct({...editingProduct, qty: e.target.value})} />
                                       <label className="text-[9px] font-bold text-slate-400 uppercase">Prix</label>
                                       <input type="number" value={editingProduct.price} className="w-full p-2 mb-3 bg-slate-800 rounded-lg border border-slate-700 text-slate-100" onChange={e => setEditingProduct({...editingProduct, price: e.target.value})} />
-                                      <label className="text-[9px] font-bold text-slate-400 uppercase">Image</label>
-                                      <input type="file" accept="image/*" onChange={e => handleImageUpload(e, setEditingProduct, editingProduct)} className="mb-3 w-full text-[10px] text-slate-400" />
+                                      <FileInput onFileSelect={(file) => setEditingProduct({...editingProduct, imageFile: file})} label="Nouvelle image (optionnel)" />
                                       <div className="flex gap-2">
                                         <button onClick={() => setEditingProduct(null)} className="flex-1 py-2 bg-slate-700 border border-slate-600 rounded-lg text-slate-200">Annuler</button>
                                         <button onClick={() => requestConfirm("saveProduct", null, saveProductEdit)} className="flex-1 py-2 bg-indigo-600 text-white rounded-lg">Enregistrer</button>
@@ -821,7 +1002,7 @@
                       <label className="text-[9px] uppercase font-bold text-slate-400">Nom</label><input type="text" className="w-full p-3 mb-3 bg-slate-900 rounded-lg outline-none focus:ring-1 focus:ring-indigo-500 text-slate-100" onChange={e=>setNewProduct({...newProduct, name:e.target.value})} />
                       <label className="text-[9px] uppercase font-bold text-slate-400">Quantité</label><input type="number" className="w-full p-3 mb-3 bg-slate-900 rounded-lg outline-none focus:ring-1 focus:ring-indigo-500 text-slate-100" onChange={e=>setNewProduct({...newProduct, qty:e.target.value})} />
                       <label className="text-[9px] uppercase font-bold text-slate-400">Prix</label><input type="number" className="w-full p-3 mb-3 bg-slate-900 rounded-lg outline-none focus:ring-1 focus:ring-indigo-500 text-slate-100" onChange={e=>setNewProduct({...newProduct, price:e.target.value})} />
-                      <label className="text-[9px] uppercase font-bold text-slate-400 mt-2">Image</label><input type="file" accept="image/*" onChange={e=>handleImageUpload(e, setNewProduct, newProduct)} className="mb-6 w-full text-sm text-slate-400" />
+                      <FileInput onFileSelect={(file) => setNewProduct({...newProduct, imageFile: file})} label="Image (optionnel)" />
                       <div className="flex gap-3"><button onClick={()=>setShowProductModal(false)} className="flex-1 py-3 bg-slate-700 rounded-xl font-medium text-slate-200">Annuler</button><button onClick={()=>requestConfirm("addProduct",null,addProduct)} className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-medium">Ajouter</button></div>
                     </>
                   )}
