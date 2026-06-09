@@ -743,7 +743,13 @@
         React.createElement('input', { type: 'file', accept: 'image/*', onChange: (e) => onFileSelect(e.target.files[0]), className: 'w-full text-sm text-slate-400 file:mr-2 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-sm file:bg-slate-700 file:text-slate-200 hover:file:bg-slate-600' })
       );
       
-      if (isLoading) return <div className="fixed inset-0 bg-slate-900 flex items-center justify-center"><div className="text-slate-200 text-lg">Chargement...</div></div>;
+      if (isLoading) {
+        return (
+          <div className="fixed inset-0 bg-slate-900 flex items-center justify-center">
+            <img src="LDHOLDING-removebg-preview.png" alt="LD Holding" className="h-24 w-auto object-contain animate-pulse" />
+          </div>
+        );
+      }
       
       const safeBrands = Array.isArray(brands) ? brands : [];
       const safeSelectedBrand = selectedBrand && selectedBrand.products && Array.isArray(selectedBrand.products) ? selectedBrand : null;
@@ -753,7 +759,6 @@
         <div className="fixed inset-0 bg-slate-900 flex justify-center font-sans">
           {notification && <div className="fixed top-6 z-[100] bg-slate-800 text-slate-100 px-6 py-3 rounded-full text-xs font-bold shadow-2xl animate-fade-in-down border border-indigo-500/30">{notification}</div>}
           
-          {/* Conteneur principal avec padding responsive */}
           <div className={`w-full h-full overflow-y-auto p-4 lg:p-6 transition-opacity duration-300 ${isTransitioning ? 'opacity-0' : 'opacity-100'}`}>
             
             {/* Header (inchangé) */}
@@ -772,19 +777,18 @@
               </div>
             </div>
             
-            {/* Layout Desktop : Sidebar + Contenu principal (visible seulement en lg) */}
-            {/* Pour le mode client (non admin) */}
+            {/* Vue Client avec sidebar panier fixe à droite (lg uniquement) */}
             {!isAdmin && currentView === 'home' && (
               <div className="lg:flex lg:gap-6">
-                {/* Sidebar panier (visible seulement en lg) - contenu identique à la modale */}
-                <div className="hidden lg:block lg:w-80 lg:flex-shrink-0 lg:sticky lg:top-6 lg:self-start lg:bg-slate-800 lg:rounded-xl lg:border lg:border-slate-700 lg:shadow-lg lg:p-4 lg:h-[calc(100vh-120px)] lg:overflow-y-auto">
-                  <h2 className="text-lg font-bold text-slate-100 mb-4">Mon panier</h2>
+                {/* Sidebar panier fixe à droite sur desktop */}
+                <div className="hidden lg:block lg:fixed lg:right-0 lg:top-0 lg:h-full lg:w-96 lg:min-w-[350px] lg:max-w-xl lg:bg-slate-800 lg:border-l lg:border-slate-700 lg:shadow-xl lg:p-6 lg:overflow-y-auto lg:z-30 lg:mt-0">
+                  <h2 className="text-xl font-bold text-slate-100 mb-4">Mon panier</h2>
                   {cart.length === 0 ? (
                     <p className="text-center text-slate-400 py-8">Votre panier est vide</p>
                   ) : (
-                    <div className="space-y-3">
+                    <div className="space-y-4">
                       {cart.map((item, idx) => (
-                        <div key={idx} className="flex gap-3 items-center border-b border-slate-700 pb-3">
+                        <div key={idx} className="flex gap-3 items-start border-b border-slate-700 pb-3">
                           <div className="w-12 h-12 bg-slate-700 rounded-lg overflow-hidden flex-shrink-0">
                             {item.product.image ? <img src={item.product.image} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-[8px] text-slate-500">img</div>}
                           </div>
@@ -799,7 +803,7 @@
                     </div>
                   )}
                   {cart.length > 0 && (
-                    <div className="mt-4 pt-4 border-t border-slate-700 sticky bottom-0 bg-slate-800">
+                    <div className="mt-6 pt-4 border-t border-slate-700 sticky bottom-0 bg-slate-800">
                       {showPrices && (
                         <div className="flex justify-between font-bold text-slate-100 mb-3">
                           <span>Total</span>
@@ -810,15 +814,15 @@
                     </div>
                   )}
                 </div>
-                {/* Contenu principal (grille des marques) */}
-                <div className="flex-1">
-                  <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-4">
+                {/* Contenu principal - grille des marques avec réduction de taille sur desktop */}
+                <div className="flex-1 lg:mr-[384px]">
+                  <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-4 lg:gap-6">
                     {safeBrands.map(brand => (
-                      <div key={brand.id} className="flex flex-col items-center gap-2">
+                      <div key={brand.id} className="flex flex-col items-center gap-2 lg:scale-90 lg:origin-top">
                         <button onClick={() => openBrand(brand)} className="w-full aspect-square rounded-[24px] overflow-hidden border border-slate-700 bg-slate-800 shadow-md transition-transform active:scale-95 hover:shadow-lg hover:shadow-indigo-500/20">
                           {brand.image ? <img src={brand.image} className="w-full h-full object-cover" /> : <div className="w-full h-full bg-slate-700 flex items-center justify-center text-[10px] text-slate-400 font-medium">IMAGE</div>}
                         </button>
-                        <span className="text-slate-300 font-semibold text-xs tracking-tight bg-slate-800/80 px-2 py-0.5 rounded-full">{brand.name}</span>
+                        <span className="text-slate-300 font-semibold text-xs tracking-tight bg-slate-800/80 px-2 py-0.5 rounded-full lg:text-[10px]">{brand.name}</span>
                       </div>
                     ))}
                   </div>
@@ -826,17 +830,17 @@
               </div>
             )}
             
-            {/* Vue des produits d'une marque (client) - pas de sidebar panier pour rester simple, mais on peut adapter si besoin */}
+            {/* Vue des produits d'une marque (client) - pas de sidebar, mais on réduit aussi la taille des produits sur desktop */}
             {!isAdmin && currentView !== 'home' && (
               <div className="lg:max-w-7xl lg:mx-auto">
                 <div className="grid grid-cols-2 gap-4 lg:grid-cols-4 lg:gap-6">
                   {safeSelectedBrand && safeSelectedBrand.products.map(prod => (
-                    <div key={prod.id} className="flex flex-col items-center gap-2 bg-slate-800/50 p-2 rounded-2xl shadow-sm border border-slate-700">
+                    <div key={prod.id} className="flex flex-col items-center gap-2 bg-slate-800/50 p-2 rounded-2xl shadow-sm border border-slate-700 lg:scale-90 lg:origin-top">
                       <button onClick={() => openProductModal(prod)} className="w-full aspect-square rounded-[20px] overflow-hidden border border-slate-600 bg-slate-700 active:scale-95 transition-transform">
                         {prod.image ? <img src={prod.image} className="w-full h-full object-cover" /> : <div className="w-full h-full bg-slate-700 flex items-center justify-center text-[10px] text-slate-400 font-medium">PROD</div>}
                       </button>
-                      <span className="text-slate-200 font-medium text-xs text-center px-1">{prod.name}</span>
-                      {showPrices && <span className="text-indigo-400 font-bold text-sm bg-slate-800 px-3 py-1 rounded-full">{prod.price} DZD</span>}
+                      <span className="text-slate-200 font-medium text-xs text-center px-1 lg:text-[11px]">{prod.name}</span>
+                      {showPrices && <span className="text-indigo-400 font-bold text-sm bg-slate-800 px-3 py-1 rounded-full lg:text-xs">{prod.price} DZD</span>}
                     </div>
                   ))}
                 </div>
@@ -855,10 +859,11 @@
                     <button onClick={() => setShowManageModal(true)} className="w-full text-left py-2 px-3 rounded-lg bg-slate-700 hover:bg-slate-600 transition-colors text-slate-200">⚙️ Gérer</button>
                     <button onClick={() => setShowDataModal(true)} className="w-full text-left py-2 px-3 rounded-lg bg-slate-700 hover:bg-slate-600 transition-colors text-slate-200">📊 Données</button>
                     <button onClick={() => setShowOrdersModal(true)} className="w-full text-left py-2 px-3 rounded-lg bg-slate-700 hover:bg-slate-600 transition-colors text-slate-200">📋 Commandes</button>
-                    <button onClick={() => setShowImgbbModal(true)} className="w-full text-left py-2 px-3 rounded-lg bg-slate-700 hover:bg-slate-600 transition-colors text-slate-200">🖼️ IMGbank</button>
+                    {/* Bouton IMGbank déplacé en bas avec style discret sur desktop */}
+                    <button onClick={() => setShowImgbbModal(true)} className="w-full text-left py-2 px-3 rounded-lg bg-slate-700 hover:bg-slate-600 transition-colors text-slate-200 lg:mt-8 lg:opacity-50 lg:hover:opacity-100 lg:text-xs">🖼️ IMGbank</button>
                   </div>
                 </div>
-                {/* Contenu admin principal (grille des boutons pour mobile, et grille sur desktop) */}
+                {/* Contenu admin principal (grille des boutons) */}
                 <div className="flex-1">
                   <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 lg:gap-4">
                     <button onClick={() => setShowModal(true)} className="min-h-[48px] flex flex-col items-center justify-center gap-1 p-3 bg-slate-800 border border-slate-700 rounded-xl shadow-sm hover:shadow-lg hover:shadow-indigo-500/10 transition-all duration-200 active:scale-95 text-slate-100 font-medium"><span className="text-xl">🏷️</span><span className="text-sm">Ajouter une marque</span></button>
@@ -866,20 +871,14 @@
                     <button onClick={() => setShowManageModal(true)} className="min-h-[48px] flex flex-col items-center justify-center gap-1 p-3 bg-slate-800 border border-slate-700 rounded-xl shadow-sm hover:shadow-lg hover:shadow-indigo-500/10 transition-all duration-200 active:scale-95 text-slate-100 font-medium"><span className="text-xl">⚙️</span><span className="text-sm">Gérer</span></button>
                     <button onClick={() => setShowDataModal(true)} className="min-h-[48px] flex flex-col items-center justify-center gap-1 p-3 bg-slate-800 border border-slate-700 rounded-xl shadow-sm hover:shadow-lg hover:shadow-indigo-500/10 transition-all duration-200 active:scale-95 text-slate-100 font-medium"><span className="text-xl">📊</span><span className="text-sm">Données</span></button>
                     <button onClick={() => setShowOrdersModal(true)} className="min-h-[48px] flex flex-col items-center justify-center gap-1 p-3 bg-slate-800 border border-slate-700 rounded-xl shadow-sm hover:shadow-lg hover:shadow-indigo-500/10 transition-all duration-200 active:scale-95 text-slate-100 font-medium"><span className="text-xl">📋</span><span className="text-sm">Commandes</span></button>
+                    {/* IMGbank dans le contenu principal (mobile) mais pas en double, on le laisse aussi ici pour mobile */}
                     <button onClick={() => setShowImgbbModal(true)} className="min-h-[48px] flex flex-col items-center justify-center gap-1 p-3 bg-slate-800 border border-slate-700 rounded-xl shadow-sm hover:shadow-lg hover:shadow-indigo-500/10 transition-all duration-200 active:scale-95 text-slate-100 font-medium"><span className="text-xl">🖼️</span><span className="text-sm">IMGbank</span></button>
                   </div>
                 </div>
               </div>
             )}
             
-            {/* Pour les autres vues (admin avec modales, etc.) - inchangé */}
-            {currentView !== 'home' && isAdmin && (
-              <div className="grid grid-cols-2 gap-4 lg:grid-cols-4 lg:gap-6">
-                {/* Le contenu des produits/marques pour admin n'est pas modifié */}
-              </div>
-            )}
-            
-            {/* MODALES (inchangées) */}
+            {/* MODALES (inchangées sauf pour desktop) */}
             {showPinModal && (
               <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center p-4 z-50">
                 <div className="bg-slate-800 w-full max-w-[320px] rounded-2xl shadow-2xl p-6 border border-slate-700">
@@ -909,7 +908,7 @@
               </div>
             )}
             
-            {/* Modale panier (visible uniquement sur mobile, inchangée) */}
+            {/* Modale panier (mobile uniquement) - inchangée */}
             {showCartModal && !isAdmin && (
               <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
                 <div className="bg-slate-800 w-full max-w-[340px] rounded-2xl shadow-2xl max-h-[80vh] flex flex-col border border-slate-700">
@@ -941,10 +940,10 @@
               </div>
             )}
             
-            {/* Toutes les autres modales (produit, livraison, commandes, données, batch, imgbb, gestion) sont inchangées */}
+            {/* Modale produit, livraison, commandes, données, batch, imgbb - avec ajustements desktop */}
             {selectedProduct && !isAdmin && (
               <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 z-50">
-                <div className="bg-slate-800 w-full max-w-[320px] rounded-3xl overflow-hidden shadow-2xl border border-slate-700">
+                <div className="bg-slate-800 w-full max-w-[320px] lg:max-w-2xl lg:mx-auto rounded-3xl overflow-hidden shadow-2xl border border-slate-700">
                   <div className="aspect-square bg-slate-700">{selectedProduct.image ? <img src={selectedProduct.image} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-slate-400 text-sm">Pas d'image</div>}</div>
                   <div className="p-5">
                     <h3 className="text-xl font-bold text-slate-100">{selectedProduct.name}</h3>
@@ -968,7 +967,7 @@
             
             {showDeliveryModal && !isAdmin && (
               <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-                <div className="bg-slate-800 w-full max-w-[340px] rounded-2xl shadow-2xl p-6 border border-slate-700">
+                <div className="bg-slate-800 w-full max-w-[340px] lg:max-w-2xl lg:mx-auto rounded-2xl shadow-2xl p-6 border border-slate-700">
                   <h2 className="text-xl font-bold text-slate-100 mb-4">Livraison</h2>
                   <div className="space-y-3">
                     <input type="text" autoComplete="off" placeholder="Nom / Entreprise *" className="w-full p-3 bg-slate-900 rounded-xl border border-slate-700 outline-none focus:border-indigo-500 text-slate-100 placeholder:text-slate-500" value={deliveryInfo.name} onChange={e => setDeliveryInfo({...deliveryInfo, name: e.target.value})} />
@@ -981,16 +980,17 @@
               </div>
             )}
             
+            {/* MODALE COMMANDES ADMIN - agrandie sur desktop */}
             {showOrdersModal && isAdmin && (
               <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-                <div className="bg-slate-800 w-full max-w-[340px] rounded-2xl shadow-2xl max-h-[85vh] flex flex-col border border-slate-700">
-                  <div className="p-4 border-b border-slate-700 flex justify-between items-center"><h2 className="text-lg font-bold text-slate-100">Commandes</h2><button onClick={() => setShowOrdersModal(false)} className="text-slate-400 text-2xl hover:text-slate-200">&times;</button></div>
+                <div className="bg-slate-800 w-full max-w-[340px] lg:max-w-4xl lg:mx-auto lg:p-8 rounded-2xl shadow-2xl max-h-[85vh] flex flex-col border border-slate-700">
+                  <div className="p-4 border-b border-slate-700 flex justify-between items-center lg:px-6"><h2 className="text-lg font-bold text-slate-100 lg:text-xl">Commandes</h2><button onClick={() => setShowOrdersModal(false)} className="text-slate-400 text-2xl hover:text-slate-200">&times;</button></div>
                   <div className="flex border-b border-slate-700">
-                    <button onClick={() => setOrdersActiveTab("new")} className={`flex-1 py-3 text-xs font-medium ${ordersActiveTab==="new"?"text-indigo-400 border-b-2 border-indigo-400":"text-slate-400"}`}>Nouvelles ({newOrders.length})</button>
-                    <button onClick={() => setOrdersActiveTab("processed")} className={`flex-1 py-3 text-xs font-medium ${ordersActiveTab==="processed"?"text-indigo-400 border-b-2 border-indigo-400":"text-slate-400"}`}>Traitées ({processedOrders.length})</button>
-                    <button onClick={() => setOrdersActiveTab("delivered")} className={`flex-1 py-3 text-xs font-medium ${ordersActiveTab==="delivered"?"text-indigo-400 border-b-2 border-indigo-400":"text-slate-400"}`}>Livrées ({deliveredOrders.length})</button>
+                    <button onClick={() => setOrdersActiveTab("new")} className={`flex-1 py-3 text-xs font-medium lg:text-sm ${ordersActiveTab==="new"?"text-indigo-400 border-b-2 border-indigo-400":"text-slate-400"}`}>Nouvelles ({newOrders.length})</button>
+                    <button onClick={() => setOrdersActiveTab("processed")} className={`flex-1 py-3 text-xs font-medium lg:text-sm ${ordersActiveTab==="processed"?"text-indigo-400 border-b-2 border-indigo-400":"text-slate-400"}`}>Traitées ({processedOrders.length})</button>
+                    <button onClick={() => setOrdersActiveTab("delivered")} className={`flex-1 py-3 text-xs font-medium lg:text-sm ${ordersActiveTab==="delivered"?"text-indigo-400 border-b-2 border-indigo-400":"text-slate-400"}`}>Livrées ({deliveredOrders.length})</button>
                   </div>
-                  <div className="flex-1 overflow-y-auto p-3">
+                  <div className="flex-1 overflow-y-auto p-3 lg:p-6">
                     {ordersActiveTab === "new" && (newOrders.length===0?<p className="text-center text-slate-400 py-4">Aucune nouvelle commande</p>:newOrders.map(order=>{
                       const safeItems = Array.isArray(order.items) ? order.items : [];
                       return (
@@ -1077,15 +1077,16 @@
               </div>
             )}
             
+            {/* MODALE DONNÉES avec textes modifiés */}
             {showDataModal && isAdmin && (
               <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-                <div className="bg-slate-800 w-full max-w-[340px] rounded-2xl p-6 shadow-2xl border border-slate-700">
+                <div className="bg-slate-800 w-full max-w-[340px] lg:max-w-2xl lg:mx-auto rounded-2xl p-6 shadow-2xl border border-slate-700">
                   <div className="flex justify-between items-center mb-4"><h2 className="text-lg font-bold text-slate-100">Gestion des données</h2><button onClick={()=>{setShowDataModal(false); setPreviewData(null);}} className="text-slate-400 text-2xl hover:text-slate-200">&times;</button></div>
                   {!previewData ? (
                     <div className="mt-2 flex flex-col gap-3">
-                      <button onClick={exportToExcel} className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold active:scale-95 hover:bg-indigo-500">Exporter tout l'inventaire (Excel)</button>
+                      <button onClick={exportToExcel} className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold active:scale-95 hover:bg-indigo-500">Exporter</button>
                       <label className="w-full py-3 text-center rounded-xl font-bold bg-indigo-600 text-white cursor-pointer hover:bg-indigo-500 active:scale-95">
-                        Choisir un fichier Excel à importer
+                        Importer
                         <input type="file" className="hidden" accept=".xlsx,.xls,.csv" onChange={(e)=>{ if(e.target.files[0]) analyzeImportFile(e.target.files[0]); e.target.value=''; }} />
                       </label>
                       <button 
@@ -1093,7 +1094,7 @@
                         className={`w-full py-3 text-center rounded-xl font-bold transition-all active:scale-95 ${isUploadingBatch ? 'bg-gray-500 cursor-not-allowed' : 'bg-green-600 text-white hover:bg-green-500'}`}
                         disabled={isUploadingBatch}
                       >
-                        {isUploadingBatch ? (batchProgress.total > 0 ? `📦 ${batchProgress.current}/${batchProgress.total}` : 'Chargement...') : '📦 Lot de produits'}
+                        {isUploadingBatch ? (batchProgress.total > 0 ? `📦 ${batchProgress.current}/${batchProgress.total}` : 'Chargement...') : 'Ajouter les images'}
                       </button>
                     </div>
                   ) : (
@@ -1120,7 +1121,7 @@
             
             {showBatchModal && (
               <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-                <div className="bg-slate-800 w-full max-w-[340px] rounded-2xl p-6 shadow-2xl border border-slate-700">
+                <div className="bg-slate-800 w-full max-w-[340px] lg:max-w-2xl lg:mx-auto rounded-2xl p-6 shadow-2xl border border-slate-700">
                   <div className="flex justify-between items-center mb-4">
                     <h2 className="text-lg font-bold text-slate-100">Import de produits par lot</h2>
                     <button onClick={() => setShowBatchModal(false)} className="text-slate-400 text-2xl hover:text-slate-200">&times;</button>
@@ -1170,7 +1171,7 @@
             
             {showImgbbModal && (
               <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-                <div className="bg-slate-800 w-full max-w-[340px] rounded-2xl p-6 shadow-2xl border border-slate-700">
+                <div className="bg-slate-800 w-full max-w-[340px] lg:max-w-2xl lg:mx-auto rounded-2xl p-6 shadow-2xl border border-slate-700">
                   <div className="flex justify-between items-center mb-4">
                     <h2 className="text-lg font-bold text-slate-100">Configuration ImgBB</h2>
                     <button onClick={() => setShowImgbbModal(false)} className="text-slate-400 text-2xl hover:text-slate-200">&times;</button>
@@ -1193,7 +1194,7 @@
             
             {(showModal || showProductModal || showBrandSelect || showManageModal || editingBrand) && (
               <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-                <div className="bg-slate-800 w-full p-6 rounded-[28px] border border-slate-700 shadow-2xl max-h-[80vh] overflow-y-auto">
+                <div className="bg-slate-800 w-full p-6 lg:max-w-2xl lg:mx-auto rounded-[28px] border border-slate-700 shadow-2xl max-h-[80vh] overflow-y-auto">
                   <div className="flex justify-end"><button onClick={()=>{ setShowModal(false); setShowProductModal(false); setShowBrandSelect(false); setShowManageModal(false); setEditingBrand(null); setEditingProduct(null); }} className="text-slate-400 text-2xl hover:text-slate-200">&times;</button></div>
                   {editingBrand && (
                     <>
@@ -1282,9 +1283,12 @@
             
             {confirmAction && (
               <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-[200]">
-                <div className="bg-slate-800 w-full max-w-[280px] rounded-2xl p-5 shadow-2xl border border-slate-700">
+                <div className="bg-slate-800 w-full max-w-[280px] lg:max-w-md lg:mx-auto rounded-2xl p-5 shadow-2xl border border-slate-700">
                   <p className="text-slate-100 text-center font-medium mb-4">Confirmer l'action ?</p>
-                  <div className="flex gap-3"><button onClick={cancelConfirm} className="flex-1 py-2 bg-slate-700 rounded-xl font-medium text-slate-200">Annuler</button><button onClick={executeConfirm} className="flex-1 py-2 bg-indigo-600 text-white rounded-xl font-bold">Confirmer</button></div>
+                  <div className="flex gap-3">
+                    <button onClick={cancelConfirm} className="flex-1 py-2 bg-slate-700 rounded-xl font-medium text-slate-200">Annuler</button>
+                    <button onClick={executeConfirm} className="flex-1 py-2 bg-indigo-600 text-white rounded-xl font-bold">Confirmer</button>
+                  </div>
                 </div>
               </div>
             )}
