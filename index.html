@@ -435,7 +435,7 @@
         notify("Produit supprimé"); 
       };
       
-      // ========== TRAITEMENT PAR LOT AMÉLIORÉ ==========
+      // ========== TRAITEMENT PAR LOT CORRIGÉ (avec délai pour mise à jour UI) ==========
       const handleBatchProductUpload = async (files) => {
         if (!files || files.length === 0) return;
         if (!selectedBrandForBatch) {
@@ -455,7 +455,6 @@
         let createdCount = 0;
         let updatedCount = 0;
         
-        // Copie locale des marques pour modifications
         let updatedBrands = [...brands];
         const brandIndex = updatedBrands.findIndex(b => b.id === selectedBrandForBatch);
         if (brandIndex === -1) {
@@ -476,18 +475,17 @@
             status: `Traitement de ${file.name}...` 
           });
           
+          // Petite pause pour permettre à l'UI de se mettre à jour
+          await new Promise(r => setTimeout(r, 10));
+          
           try {
             const baseName = file.name.replace(/\.[^/.]+$/, '').trim();
-            if (!baseName) {
-              throw new Error('Nom de fichier invalide');
-            }
-            // Normalisation pour la comparaison (mais on garde le nom original pour l'affichage)
+            if (!baseName) throw new Error('Nom de fichier invalide');
             const normalizedBase = normalizeString(baseName);
             const existingProduct = currentProducts.find(p => normalizeString(p.name) === normalizedBase);
             const url = await uploadImageAndGetUrl(file, 'products');
             
             if (existingProduct) {
-              // Mise à jour
               const productIdx = currentProducts.findIndex(p => p.id === existingProduct.id);
               if (productIdx !== -1) {
                 currentProducts[productIdx] = { ...existingProduct, image: url };
@@ -495,7 +493,6 @@
                 notify(`✅ Produit "${existingProduct.name}" mis à jour dans "${brandName}"`);
               }
             } else {
-              // Création
               const newProductObj = {
                 id: Date.now() + Math.random(),
                 name: baseName,
@@ -526,17 +523,12 @@
         
         // Gestion de la fermeture de la modale
         if (errorCount === 0) {
-          // Succès total : fermeture automatique
           notify(`✅ Import réussi : ${createdCount} créés, ${updatedCount} mis à jour.`);
           setShowBatchModal(false);
         } else if (successCount > 0) {
-          // Succès partiel : on demande confirmation pour fermer
           const confirmClose = window.confirm(`Import terminé avec ${errorCount} erreur(s). Voulez-vous fermer la fenêtre ?`);
-          if (confirmClose) {
-            setShowBatchModal(false);
-          }
+          if (confirmClose) setShowBatchModal(false);
         } else {
-          // Échec total
           notify(`❌ Aucune image importée (${errorCount} échec(s)).`);
         }
         
@@ -775,13 +767,19 @@
       const safeBrands = Array.isArray(brands) ? brands : [];
       const safeSelectedBrand = selectedBrand && selectedBrand.products && Array.isArray(selectedBrand.products) ? selectedBrand : null;
       
-      // Rendu principal (JSX)
+      // Rendu principal avec logo centré et bouton retour visible
       return (
         <div className="fixed inset-0 bg-slate-900 flex justify-center font-sans">
           {notification && <div className="fixed top-6 z-[100] bg-slate-800 text-slate-100 px-6 py-3 rounded-full text-xs font-bold shadow-2xl animate-fade-in-down border border-indigo-500/30">{notification}</div>}
           <div className={`w-full h-full overflow-y-auto p-4 transition-opacity duration-300 ${isTransitioning ? 'opacity-0' : 'opacity-100'}`}>
-            <div className="flex justify-between items-center mb-8 mt-2">
-              <img src="LDHOLDING-removebg-preview.png" alt="LD Holding" className="h-[60px] w-auto object-contain" />
+            {/* Header avec logo centré */}
+            <div className="flex justify-between items-center mb-8 mt-2 relative">
+              <button onClick={goHome} className="text-slate-400 text-[11px] font-medium tracking-tight hover:text-slate-200 z-10">
+                {currentView === 'home' ? 'LD Holding' : '← Retour'}
+              </button>
+              <div className="absolute left-1/2 transform -translate-x-1/2">
+                <img src="LDHOLDING-removebg-preview.png" alt="LD Holding" className="h-[60px] w-auto object-contain" />
+              </div>
               <div className="flex items-center gap-2">
                 {isAdmin && (
                   <button onClick={() => setShowPrices(!showPrices)} className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition-all active:scale-95 ${showPrices ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-300'}`} title={showPrices ? "Masquer les prix" : "Afficher les prix"}>{showPrices ? 'DZD' : 'DZD\u0337'}</button>
@@ -790,6 +788,7 @@
               </div>
             </div>
             
+            {/* Contenu principal (identique à la version précédente) */}
             {currentView === 'home' ? (isAdmin ? (
               <div className="grid grid-cols-2 gap-3">
                 <button onClick={() => setShowModal(true)} className="min-h-[48px] flex flex-col items-center justify-center gap-1 p-3 bg-slate-800 border border-slate-700 rounded-xl shadow-sm hover:shadow-lg hover:shadow-indigo-500/10 transition-all duration-200 active:scale-95 text-slate-100 font-medium"><span className="text-xl">🏷️</span><span className="text-sm">Ajouter une marque</span></button>
