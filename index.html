@@ -214,17 +214,63 @@
       });
     };
 
-    // Composant modale de gestion des produits avec recherche
+    // Composant modale de gestion des produits avec recherche intelligente (expansion auto)
     const ManageProductsModal = ({ 
       brands, setBrands, 
       editingProduct, setEditingProduct, 
-      manageSelectedBrand, setManageSelectedBrand,
       toggleProductHidden, deleteProduct, setEditingBrand,
       requestConfirm, closeModal
     }) => {
       const [searchTerm, setSearchTerm] = useState('');
+      const [expandedBrands, setExpandedBrands] = useState(new Set()); // IDs des marques ouvertes
       const safeBrands = Array.isArray(brands) ? brands : [];
-      
+
+      // Fonction de filtrage des produits par terme de recherche
+      const productMatches = (product) => {
+        if (!searchTerm.trim()) return false;
+        return product.name.toLowerCase().includes(searchTerm.toLowerCase());
+      };
+
+      // Pour chaque marque, déterminer si elle a au moins un produit correspondant
+      const getBrandsWithMatches = () => {
+        if (!searchTerm.trim()) return new Set();
+        const matches = new Set();
+        safeBrands.forEach(brand => {
+          if (brand.products.some(p => productMatches(p))) {
+            matches.add(brand.id);
+          }
+        });
+        return matches;
+      };
+
+      // Mettre à jour l'expansion automatique quand searchTerm change
+      useEffect(() => {
+        if (searchTerm.trim()) {
+          // Expansion automatique : ouvrir toutes les marques qui ont des résultats
+          setExpandedBrands(getBrandsWithMatches());
+        } else {
+          // Quand la recherche est vide, fermer toutes les marques
+          setExpandedBrands(new Set());
+        }
+      }, [searchTerm, brands]);
+
+      // Fonction pour toggler manuellement une marque (uniquement si recherche vide)
+      const toggleBrand = (brandId) => {
+        if (searchTerm.trim()) return; // Désactiver le toggle manuel pendant la recherche
+        const newSet = new Set(expandedBrands);
+        if (newSet.has(brandId)) {
+          newSet.delete(brandId);
+        } else {
+          newSet.add(brandId);
+        }
+        setExpandedBrands(newSet);
+      };
+
+      const filteredProducts = (products) => {
+        if (!searchTerm.trim()) return products;
+        return products.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()));
+      };
+
       const FileInput = ({ onFileSelect, label }) => React.createElement('div', { className: 'mb-4' },
         React.createElement('label', { className: 'block text-[9px] uppercase font-bold text-slate-400 tracking-wider mb-1' }, label),
         React.createElement('input', { type: 'file', accept: 'image/*', onChange: (e) => onFileSelect(e.target.files[0]), className: 'w-full text-sm text-slate-400 file:mr-2 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-sm file:bg-slate-700 file:text-slate-200 hover:file:bg-slate-600' })
@@ -252,11 +298,6 @@
         setEditingProduct(null);
       };
 
-      const filteredProducts = (products) => {
-        if (!searchTerm.trim()) return products;
-        return products.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()));
-      };
-
       return React.createElement('div', { className: 'fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50' },
         React.createElement('div', { className: 'bg-slate-800 w-full p-6 lg:max-w-4xl lg:mx-auto rounded-[28px] border border-slate-700 shadow-2xl max-h-[80vh] overflow-y-auto' },
           React.createElement('div', { className: 'flex justify-end' },
@@ -271,13 +312,19 @@
             onChange: (e) => setSearchTerm(e.target.value),
             className: 'w-full p-3 mb-4 rounded-xl bg-slate-800 text-white border border-slate-700 focus:outline-none focus:border-indigo-500'
           }),
-          safeBrands.map(b => 
-            React.createElement('div', { key: b.id, className: 'mb-3' },
+          safeBrands.map(b => {
+            const isExpanded = expandedBrands.has(b.id);
+            const hasMatchingProducts = searchTerm.trim() ? filteredProducts(b.products).length > 0 : false;
+            // Afficher la marque seulement si elle a des produits correspondants (quand recherche active) ou toujours si recherche vide
+            if (searchTerm.trim() && !hasMatchingProducts) return null;
+            
+            return React.createElement('div', { key: b.id, className: 'mb-3' },
               React.createElement('button', { 
-                onClick: () => setManageSelectedBrand(manageSelectedBrand === b.id ? null : b.id),
-                className: 'w-full p-4 bg-slate-900 rounded-xl text-left font-semibold text-slate-200 shadow-sm border border-slate-700 hover:bg-slate-700'
+                onClick: () => toggleBrand(b.id),
+                className: `w-full p-4 bg-slate-900 rounded-xl text-left font-semibold text-slate-200 shadow-sm border border-slate-700 hover:bg-slate-700 ${searchTerm.trim() ? 'cursor-default opacity-80' : ''}`,
+                disabled: searchTerm.trim() ? true : false
               }, b.name),
-              manageSelectedBrand === b.id && React.createElement('div', { className: 'mt-2 pl-4' },
+              isExpanded && React.createElement('div', { className: 'mt-2 pl-4' },
                 React.createElement('div', { className: 'flex justify-center gap-2 mb-3' },
                   React.createElement('button', { 
                     onClick: () => requestConfirm("deleteBrand", { brandId: b.id }, () => deleteBrand(b.id)),
@@ -329,8 +376,8 @@
                     )
                   )
               )
-            )
-          ),
+            );
+          }),
           React.createElement('button', { onClick: closeModal, className: 'w-full py-3 bg-indigo-600 text-white rounded-xl mt-4 font-medium hover:bg-indigo-500' }, 'Fermer')
         )
       );
@@ -351,7 +398,6 @@
       const [showDataModal, setShowDataModal] = useState(false);
       const [editingProduct, setEditingProduct] = useState(null);
       const [editingBrand, setEditingBrand] = useState(null);
-      const [manageSelectedBrand, setManageSelectedBrand] = useState(null);
       const [confirmAction, setConfirmAction] = useState(null);
       const [showPinModal, setShowPinModal] = useState(false);
       const [pinCode, setPinCode] = useState('');
@@ -1475,8 +1521,6 @@
                 setBrands={setBrands}
                 editingProduct={editingProduct}
                 setEditingProduct={setEditingProduct}
-                manageSelectedBrand={manageSelectedBrand}
-                setManageSelectedBrand={setManageSelectedBrand}
                 toggleProductHidden={toggleProductHidden}
                 deleteProduct={deleteProduct}
                 setEditingBrand={setEditingBrand}
