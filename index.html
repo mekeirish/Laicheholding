@@ -18,7 +18,6 @@
     }
   </script>
   <style>
-    /* Mobile uniquement : barre de navigation en bas */
     @media (max-width: 1023px) {
       .mobile-bottom-nav {
         display: flex;
@@ -50,20 +49,16 @@
       .mobile-bottom-nav .cart-button:active {
         transform: scale(0.95);
       }
-      /* Suppression du panier flottant d'origine sur mobile */
       .mobile-floating-cart {
         display: none !important;
       }
-      /* Ajustement du padding pour le contenu principal */
       .main-content-padding {
         padding-bottom: 80px !important;
       }
-      /* Pour les modales pleine largeur, on ajuste aussi le padding si nécessaire */
       .modal-content-scroll {
         padding-bottom: 80px;
       }
     }
-    /* Desktop : barre cachée, padding réinitialisé */
     @media (min-width: 1024px) {
       .mobile-bottom-nav {
         display: none !important;
@@ -108,12 +103,10 @@
       }
     }
 
-    // Normalisation des chaînes
     const normalizeString = (str) => {
       return str.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     };
 
-    // Redimensionnement d'image
     const resizeImage = (file, maxWidth = 800) => {
       return new Promise((resolve, reject) => {
         if (!file.type.startsWith('image/')) {
@@ -152,7 +145,6 @@
       });
     };
 
-    // Upload vers ImgBB avec clé API dynamique
     const uploadToImgBB = async (file) => {
       const apiKey = localStorage.getItem('imgbb_api_key');
       if (!apiKey) {
@@ -186,7 +178,7 @@
       ).map(b => ({
         ...b,
         name: b.name.trim(),
-        products: Array.isArray(b.products) ? b.products : []
+        products: Array.isArray(b.products) ? b.products.map(p => ({ ...p, hidden: p.hidden === true })) : []
       }));
     };
 
@@ -388,7 +380,6 @@
       
       const notify = (msg) => { setNotification(msg); setTimeout(() => setNotification(null), 2000); };
       
-      // Chargement initial de la clé API ImgBB
       useEffect(() => {
         const savedKey = localStorage.getItem('imgbb_api_key');
         if (savedKey) setImgbbApiKey(savedKey);
@@ -404,7 +395,7 @@
         }
       };
       
-      // ========== Actions manuelles (marques, produits) - inchangées ==========
+      // ========== Actions manuelles (marques, produits) ==========
       const addBrand = async () => {
         if (!firebaseReady) { notify("Firebase pas encore prêt"); return; }
         if (newBrand.name && newBrand.name.trim()) {
@@ -430,7 +421,9 @@
           notify("Marque ajoutée");
         } else { notify("Nom requis"); }
       };
+      
       const deleteBrand = (id) => { setBrands(brands.filter(b => b.id !== id)); notify("Marque supprimée"); };
+      
       const saveBrandEdit = async () => {
         if (!firebaseReady) { notify("Firebase pas encore prêt"); return; }
         if (editingBrand.name && editingBrand.name.trim()) {
@@ -449,6 +442,7 @@
           notify("Marque mise à jour");
         } else { notify("Nom requis"); }
       };
+      
       const addProduct = async () => {
         if (!firebaseReady) { notify("Firebase pas encore prêt"); return; }
         if (newProduct.name && newProduct.name.trim() && newProduct.brandId) {
@@ -467,7 +461,8 @@
             name: newProduct.name.trim(),
             qty: newProduct.qty,
             price: newProduct.price,
-            image: imageUrl
+            image: imageUrl,
+            hidden: false   // ← nouveau produit visible par défaut
           };
           setBrands(brands.map(b => b.id === newProduct.brandId ? { ...b, products: [...b.products, newProductObj] } : b));
           setNewProduct({ name: "", qty: "", price: "", imageFile: null, brandId: null });
@@ -475,6 +470,7 @@
           notify("Produit ajouté");
         } else { notify("Nom et marque requis"); }
       };
+      
       const saveProductEdit = async () => {
         if (!firebaseReady) { notify("Firebase pas encore prêt"); return; }
         if (editingProduct.name && editingProduct.name.trim()) {
@@ -493,9 +489,23 @@
           notify("Produit modifié");
         } else { notify("Nom requis"); }
       };
+      
       const deleteProduct = (brandId, productId) => { 
         setBrands(brands.map(b => b.id === brandId ? { ...b, products: b.products.filter(p => p.id !== productId) } : b)); 
         notify("Produit supprimé"); 
+      };
+      
+      // Fonction pour masquer/afficher un produit
+      const toggleProductHidden = (brandId, productId) => {
+        setBrands(prevBrands => prevBrands.map(brand => {
+          if (brand.id !== brandId) return brand;
+          return {
+            ...brand,
+            products: brand.products.map(prod =>
+              prod.id === productId ? { ...prod, hidden: !prod.hidden } : prod
+            )
+          };
+        }));
       };
       
       // ========== TRAITEMENT PAR LOT AVEC IMGBB ==========
@@ -545,7 +555,8 @@
                   name: baseName,
                   qty: 0,
                   price: 0,
-                  image: imageUrl
+                  image: imageUrl,
+                  hidden: false   // ← nouveau produit visible par défaut
                 };
                 currentProducts.push(newProductObj);
                 createdCount++;
@@ -557,7 +568,6 @@
             }
           }
           if (createdCount + updatedCount > 0) {
-            console.log("Produits à sauvegarder:", currentProducts);
             const db = window.firebase.database();
             await db.ref(`data/${brandIndex}/products`).set(currentProducts);
             updatedBrands[brandIndex].products = currentProducts;
@@ -590,11 +600,16 @@
         }
       };
       
-      // ========== Export/Import Excel ==========
+      // ========== Export/Import Excel (ajout de la colonne "Masqué") ==========
       const exportToExcel = () => {
         if(!window.XLSX){ notify("Excel non chargé"); return; }
         try {
-          const data = [["Marque","Produit","Quantité","Prix"], ...brands.flatMap(b => b.products.map(p => [b.name, p.name, p.qty, p.price]))];
+          const data = [["Marque","Produit","Quantité","Prix","Masqué"]];
+          brands.forEach(b => {
+            b.products.forEach(p => {
+              data.push([b.name, p.name, p.qty, p.price, p.hidden ? "Oui" : "Non"]);
+            });
+          });
           const ws = window.XLSX.utils.aoa_to_sheet(data);
           const wb = window.XLSX.utils.book_new();
           window.XLSX.utils.book_append_sheet(wb, ws, "Inventaire");
@@ -625,6 +640,7 @@
               let qty = parseFloat(row[2]), price = parseFloat(row[3]);
               if(isNaN(qty)) { errors.push(`Ligne ${i+1}: Qté non numérique`); continue; }
               if(isNaN(price)) { errors.push(`Ligne ${i+1}: Prix non numérique`); continue; }
+              // La colonne "Masqué" (index 4) est optionnelle, on ne la lit pas pour l'instant (par défaut false)
               if(!brandProducts.has(brandName)) brandProducts.set(brandName, new Map());
               const prodMap = brandProducts.get(brandName);
               if(!prodMap.has(productName)) { prodMap.set(productName, { qty, price }); totalProducts++; }
@@ -655,7 +671,7 @@
             for(let [prodName, { qty, price }] of productsMap.entries()) {
               const existIdx = existing.findIndex(p => p.name === prodName);
               if(existIdx !== -1) { existing[existIdx].qty = qty; existing[existIdx].price = price; updated++; }
-              else { existing.push({ id: Date.now()+Math.random()*10000, name: prodName, qty, price, image: null }); added++; }
+              else { existing.push({ id: Date.now()+Math.random()*10000, name: prodName, qty, price, image: null, hidden: false }); added++; }
             }
             updatedBrands[idx].products = existing;
           }
@@ -815,10 +831,8 @@
         <div className="fixed inset-0 bg-slate-900 flex justify-center font-sans">
           {notification && <div className="fixed top-6 z-[100] bg-slate-800 text-slate-100 px-6 py-3 rounded-full text-xs font-bold shadow-2xl animate-fade-in-down border border-indigo-500/30">{notification}</div>}
           
-          {/* Conteneur principal avec padding mobile compensatoire */}
           <div className={`w-full h-full overflow-y-auto p-4 lg:p-6 main-content-padding transition-opacity duration-300 ${isTransitioning ? 'opacity-0' : 'opacity-100'}`}>
             
-            {/* Header (inchangé) */}
             <div className="flex justify-between items-center mb-8 mt-2 relative lg:z-20">
               <button onClick={goHome} className="text-slate-400 text-[11px] font-medium tracking-tight hover:text-slate-200 z-10">
                 {currentView === 'home' ? 'LD Holding' : '← Retour'}
@@ -834,10 +848,9 @@
               </div>
             </div>
             
-            {/* Vue Client (inchangée dans le contenu, seule la barre de navigation mobile change l'emplacement du panier) */}
+            {/* Vue Client (home) */}
             {!isAdmin && currentView === 'home' && (
               <div className="lg:flex lg:gap-6">
-                {/* Sidebar panier fixe à gauche (desktop uniquement) - inchangée */}
                 <div className="hidden lg:block lg:fixed lg:left-0 lg:top-0 lg:h-full lg:w-96 lg:min-w-[350px] lg:max-w-xl lg:bg-slate-800 lg:border-r lg:border-slate-700 lg:shadow-xl lg:p-6 lg:overflow-y-auto lg:z-30 lg:mt-16">
                   <h2 className="text-xl font-bold text-slate-100 mb-4">Mon panier</h2>
                   {cart.length === 0 ? (
@@ -886,11 +899,10 @@
               </div>
             )}
             
-            {/* Vue des produits d'une marque (client) - inchangée */}
+            {/* Vue des produits d'une marque (client) - avec filtrage des produits masqués */}
             {!isAdmin && currentView !== 'home' && (
               <div className="lg:flex lg:gap-6">
                 <div className="hidden lg:block lg:fixed lg:left-0 lg:top-0 lg:h-full lg:w-96 lg:min-w-[350px] lg:max-w-xl lg:bg-slate-800 lg:border-r lg:border-slate-700 lg:shadow-xl lg:p-6 lg:overflow-y-auto lg:z-30 lg:mt-16">
-                  {/* Même sidebar panier que ci-dessus, répété pour rester cohérent */}
                   <h2 className="text-xl font-bold text-slate-100 mb-4">Mon panier</h2>
                   {cart.length === 0 ? (
                     <p className="text-center text-slate-400 py-8">Votre panier est vide</p>
@@ -925,21 +937,23 @@
                 </div>
                 <div className="flex-1 lg:ml-96">
                   <div className="grid grid-cols-2 gap-4 lg:grid-cols-4 lg:gap-6">
-                    {safeSelectedBrand && safeSelectedBrand.products.map(prod => (
-                      <div key={prod.id} className="flex flex-col items-center gap-2 bg-slate-800/50 p-2 rounded-2xl shadow-sm border border-slate-700 lg:scale-90 lg:origin-top">
-                        <button onClick={() => openProductModal(prod)} className="w-full aspect-square rounded-[20px] overflow-hidden border border-slate-600 bg-slate-700 active:scale-95 transition-transform">
-                          {prod.image ? <img src={prod.image} className="w-full h-full object-cover" /> : <div className="w-full h-full bg-slate-700 flex items-center justify-center text-[10px] text-slate-400 font-medium">PROD</div>}
-                        </button>
-                        <span className="text-slate-200 font-medium text-xs text-center px-1 lg:text-[11px]">{prod.name}</span>
-                        {showPrices && <span className="text-indigo-400 font-bold text-sm bg-slate-800 px-3 py-1 rounded-full lg:text-xs">{prod.price} DZD</span>}
-                      </div>
+                    {safeSelectedBrand && safeSelectedBrand.products
+                      .filter(prod => !prod.hidden)   // ← Filtre : les produits masqués ne sont pas affichés
+                      .map(prod => (
+                        <div key={prod.id} className="flex flex-col items-center gap-2 bg-slate-800/50 p-2 rounded-2xl shadow-sm border border-slate-700 lg:scale-90 lg:origin-top">
+                          <button onClick={() => openProductModal(prod)} className="w-full aspect-square rounded-[20px] overflow-hidden border border-slate-600 bg-slate-700 active:scale-95 transition-transform">
+                            {prod.image ? <img src={prod.image} className="w-full h-full object-cover" /> : <div className="w-full h-full bg-slate-700 flex items-center justify-center text-[10px] text-slate-400 font-medium">PROD</div>}
+                          </button>
+                          <span className="text-slate-200 font-medium text-xs text-center px-1 lg:text-[11px]">{prod.name}</span>
+                          {showPrices && <span className="text-indigo-400 font-bold text-sm bg-slate-800 px-3 py-1 rounded-full lg:text-xs">{prod.price} DZD</span>}
+                        </div>
                     ))}
                   </div>
                 </div>
               </div>
             )}
             
-            {/* Vue Admin : Dashboard avec sidebar (lg uniquement) - inchangé */}
+            {/* Vue Admin : Dashboard */}
             {isAdmin && currentView === 'home' && (
               <div className="lg:flex lg:gap-6">
                 <div className="hidden lg:block lg:w-72 lg:flex-shrink-0 lg:bg-slate-800 lg:rounded-xl lg:border lg:border-slate-700 lg:shadow-lg lg:p-4 lg:h-[calc(100vh-120px)] lg:overflow-y-auto lg:flex lg:flex-col lg:justify-between">
@@ -970,7 +984,7 @@
               </div>
             )}
             
-            {/* MODALES (inchangées, certaines avec scroll) */}
+            {/* MODALES (les modifications principales se trouvent dans showManageModal) */}
             {showPinModal && (
               <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center p-4 z-50">
                 <div className="bg-slate-800 w-full max-w-[320px] rounded-2xl shadow-2xl p-6 border border-slate-700">
@@ -988,7 +1002,6 @@
               </div>
             )}
             
-            {/* Modale panier (mobile uniquement) - conservée pour compatibilité mais le bouton flottant est remplacé */}
             {showCartModal && !isAdmin && (
               <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
                 <div className="bg-slate-800 w-full max-w-[340px] rounded-2xl shadow-2xl max-h-[80vh] flex flex-col border border-slate-700">
@@ -1020,7 +1033,6 @@
               </div>
             )}
             
-            {/* Modale produit, livraison, commandes, données, batch, imgbb - inchangées */}
             {selectedProduct && !isAdmin && (
               <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 z-50">
                 <div className="bg-slate-800 w-full max-w-[320px] lg:max-w-2xl lg:mx-auto rounded-3xl overflow-hidden shadow-2xl border border-slate-700">
@@ -1070,7 +1082,6 @@
                     <button onClick={() => setOrdersActiveTab("delivered")} className={`flex-1 py-3 text-xs font-medium lg:text-base ${ordersActiveTab==="delivered"?"text-indigo-400 border-b-2 border-indigo-400":"text-slate-400"}`}>Livrées ({deliveredOrders.length})</button>
                   </div>
                   <div className="flex-1 overflow-y-auto p-3 lg:p-6">
-                    {/* Contenu identique aux versions précédentes */}
                     {ordersActiveTab === "new" && (newOrders.length===0?<p className="text-center text-slate-400 py-4">Aucune nouvelle commande</p>:newOrders.map(order=>{
                       const safeItems = Array.isArray(order.items) ? order.items : [];
                       return (
@@ -1315,6 +1326,7 @@
                       <div className="flex gap-3"><button onClick={()=>setShowModal(false)} className="flex-1 py-3 bg-slate-700 rounded-xl font-medium text-slate-200">Annuler</button><button onClick={()=>requestConfirm("addBrand",null,addBrand)} className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-medium">Créer</button></div>
                     </>
                   )}
+                  {/* MODALE DE GESTION AVEC BOUTON MASQUER/AFFICHER */}
                   {showManageModal && !editingBrand && (
                     <>
                       <h2 className="text-slate-100 font-bold mb-6 text-lg border-l-4 border-indigo-500 pl-3">Gestion</h2>
@@ -1331,10 +1343,18 @@
                                 <React.Fragment key={p.id}>
                                   <div className="flex items-center gap-2 mb-2">
                                     <button onClick={() => setEditingProduct(editingProduct?.id === p.id ? null : p)} className="flex-1 p-3 bg-slate-900 border border-slate-700 text-slate-200 text-xs font-medium rounded-lg shadow-sm hover:bg-slate-800 text-left">
-                                      {p.name}
+                                      {p.name} {p.hidden && <span className="ml-2 text-orange-400 text-[10px]">(masqué)</span>}
                                     </button>
                                     <button onClick={() => requestConfirm("deleteProduct", { brandId: b.id, productId: p.id }, () => deleteProduct(b.id, p.id))} className="w-8 h-8 bg-red-900/50 text-red-300 rounded-full font-bold active:scale-95 hover:bg-red-800/50">
                                       ✕
+                                    </button>
+                                    {/* Bouton Masquer/Afficher */}
+                                    <button 
+                                      onClick={() => toggleProductHidden(b.id, p.id)} 
+                                      className={`w-8 h-8 rounded-full font-bold active:scale-95 ${p.hidden ? 'bg-orange-700 text-white' : 'bg-slate-700 text-slate-300'}`}
+                                      title={p.hidden ? "Afficher" : "Masquer"}
+                                    >
+                                      {p.hidden ? '👁️' : '🚫'}
                                     </button>
                                   </div>
                                   {editingProduct && editingProduct.id === p.id && (
@@ -1397,7 +1417,7 @@
             {isAdmin && <DebugConsole />}
           </div>
           
-          {/* Barre de navigation mobile (uniquement sur écrans < 1024px) */}
+          {/* Barre de navigation mobile */}
           <div className="mobile-bottom-nav">
             <button 
               onClick={() => setShowCartModal(true)} 
