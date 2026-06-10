@@ -214,6 +214,128 @@
       });
     };
 
+    // Composant modale de gestion des produits avec recherche
+    const ManageProductsModal = ({ 
+      brands, setBrands, 
+      editingProduct, setEditingProduct, 
+      manageSelectedBrand, setManageSelectedBrand,
+      toggleProductHidden, deleteProduct, setEditingBrand,
+      requestConfirm, closeModal
+    }) => {
+      const [searchTerm, setSearchTerm] = useState('');
+      const safeBrands = Array.isArray(brands) ? brands : [];
+      
+      const FileInput = ({ onFileSelect, label }) => React.createElement('div', { className: 'mb-4' },
+        React.createElement('label', { className: 'block text-[9px] uppercase font-bold text-slate-400 tracking-wider mb-1' }, label),
+        React.createElement('input', { type: 'file', accept: 'image/*', onChange: (e) => onFileSelect(e.target.files[0]), className: 'w-full text-sm text-slate-400 file:mr-2 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-sm file:bg-slate-700 file:text-slate-200 hover:file:bg-slate-600' })
+      );
+      
+      const saveProductEdit = async () => {
+        if (!editingProduct.name || !editingProduct.name.trim()) {
+          alert("Nom requis");
+          return;
+        }
+        let imageUrl = editingProduct.image;
+        if (editingProduct.imageFile) {
+          try {
+            imageUrl = await uploadToImgBB(editingProduct.imageFile);
+          } catch (err) {
+            console.error('Upload image produit échoué:', err);
+            alert("Erreur lors de l'upload de l'image");
+            return;
+          }
+        }
+        setBrands(prev => prev.map(b => ({ 
+          ...b, 
+          products: b.products.map(p => p.id === editingProduct.id ? {...editingProduct, name: editingProduct.name.trim(), image: imageUrl} : p) 
+        })));
+        setEditingProduct(null);
+      };
+
+      const filteredProducts = (products) => {
+        if (!searchTerm.trim()) return products;
+        return products.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()));
+      };
+
+      return React.createElement('div', { className: 'fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50' },
+        React.createElement('div', { className: 'bg-slate-800 w-full p-6 lg:max-w-4xl lg:mx-auto rounded-[28px] border border-slate-700 shadow-2xl max-h-[80vh] overflow-y-auto' },
+          React.createElement('div', { className: 'flex justify-end' },
+            React.createElement('button', { onClick: closeModal, className: 'text-slate-400 text-2xl hover:text-slate-200' }, '×')
+          ),
+          React.createElement('h2', { className: 'text-slate-100 font-bold mb-4 text-lg border-l-4 border-indigo-500 pl-3' }, 'Gestion'),
+          // Champ de recherche
+          React.createElement('input', {
+            type: 'text',
+            placeholder: '🔍 Rechercher un produit...',
+            value: searchTerm,
+            onChange: (e) => setSearchTerm(e.target.value),
+            className: 'w-full p-3 mb-4 rounded-xl bg-slate-800 text-white border border-slate-700 focus:outline-none focus:border-indigo-500'
+          }),
+          safeBrands.map(b => 
+            React.createElement('div', { key: b.id, className: 'mb-3' },
+              React.createElement('button', { 
+                onClick: () => setManageSelectedBrand(manageSelectedBrand === b.id ? null : b.id),
+                className: 'w-full p-4 bg-slate-900 rounded-xl text-left font-semibold text-slate-200 shadow-sm border border-slate-700 hover:bg-slate-700'
+              }, b.name),
+              manageSelectedBrand === b.id && React.createElement('div', { className: 'mt-2 pl-4' },
+                React.createElement('div', { className: 'flex justify-center gap-2 mb-3' },
+                  React.createElement('button', { 
+                    onClick: () => requestConfirm("deleteBrand", { brandId: b.id }, () => deleteBrand(b.id)),
+                    className: 'px-3 py-1.5 bg-red-900/50 text-red-300 rounded-lg text-xs font-bold'
+                  }, '✕ Supprimer'),
+                  React.createElement('button', { 
+                    onClick: () => setEditingBrand(b),
+                    className: 'px-3 py-1.5 bg-slate-700 text-slate-200 rounded-lg text-xs font-bold'
+                  }, '✎ Modifier')
+                ),
+                filteredProducts(b.products).length === 0 && searchTerm.trim() !== '' ?
+                  React.createElement('p', { className: 'text-center text-slate-400 py-4 text-sm' }, 'Aucun produit ne correspond à votre recherche') :
+                  filteredProducts(b.products).map(p => 
+                    React.createElement(React.Fragment, { key: p.id },
+                      React.createElement('div', { className: 'flex items-center gap-2 mb-2' },
+                        React.createElement('button', { 
+                          onClick: () => setEditingProduct(editingProduct?.id === p.id ? null : p),
+                          className: 'flex-1 p-3 bg-slate-900 border border-slate-700 text-slate-200 text-xs font-medium rounded-lg shadow-sm hover:bg-slate-800 text-left'
+                        }, p.name, p.hidden && React.createElement('span', { className: 'ml-2 text-orange-400 text-[10px]' }, '(masqué)')),
+                        React.createElement('button', { 
+                          onClick: () => toggleProductHidden(b.id, p.id),
+                          className: `w-10 h-10 flex items-center justify-center rounded-full lg:w-auto lg:h-auto lg:px-3 lg:py-1.5 lg:rounded-lg text-xs font-bold ${p.hidden ? 'bg-orange-900/50 text-orange-300' : 'bg-slate-700 text-slate-200'} flex-shrink-0`,
+                          title: p.hidden ? "Afficher" : "Masquer"
+                        }, 
+                          React.createElement('span', { className: 'lg:hidden' }, p.hidden ? '👁️' : '🚫'),
+                          React.createElement('span', { className: 'hidden lg:inline' }, p.hidden ? '👁️ Afficher' : '🚫 Masquer')
+                        ),
+                        React.createElement('button', { 
+                          onClick: () => requestConfirm("deleteProduct", { brandId: b.id, productId: p.id }, () => deleteProduct(b.id, p.id)),
+                          className: 'w-10 h-10 flex items-center justify-center rounded-full lg:w-auto lg:h-auto lg:px-3 lg:py-1.5 lg:rounded-lg bg-red-900/50 text-red-300 rounded-lg text-xs font-bold flex-shrink-0'
+                        },
+                          React.createElement('span', { className: 'lg:hidden' }, '✕'),
+                          React.createElement('span', { className: 'hidden lg:inline' }, '✕ Supprimer')
+                        )
+                      ),
+                      editingProduct && editingProduct.id === p.id && React.createElement('div', { className: 'p-4 mt-2 mb-3 bg-slate-900 rounded-2xl border border-slate-700' },
+                        React.createElement('label', { className: 'text-[9px] font-bold text-slate-400 uppercase' }, 'Nom'),
+                        React.createElement('input', { type: 'text', value: editingProduct.name, className: 'w-full p-2 mb-2 bg-slate-800 rounded-lg border border-slate-700 text-slate-100', onChange: e => setEditingProduct({...editingProduct, name: e.target.value}) }),
+                        React.createElement('label', { className: 'text-[9px] font-bold text-slate-400 uppercase' }, 'Quantité'),
+                        React.createElement('input', { type: 'number', value: editingProduct.qty, className: 'w-full p-2 mb-2 bg-slate-800 rounded-lg border border-slate-700 text-slate-100', onChange: e => setEditingProduct({...editingProduct, qty: e.target.value}) }),
+                        React.createElement('label', { className: 'text-[9px] font-bold text-slate-400 uppercase' }, 'Prix'),
+                        React.createElement('input', { type: 'number', value: editingProduct.price, className: 'w-full p-2 mb-3 bg-slate-800 rounded-lg border border-slate-700 text-slate-100', onChange: e => setEditingProduct({...editingProduct, price: e.target.value}) }),
+                        React.createElement(FileInput, { onFileSelect: (file) => setEditingProduct({...editingProduct, imageFile: file}), label: 'Nouvelle image (optionnel)' }),
+                        React.createElement('div', { className: 'flex gap-2' },
+                          React.createElement('button', { onClick: () => setEditingProduct(null), className: 'flex-1 py-2 bg-slate-700 border border-slate-600 rounded-lg text-slate-200' }, 'Annuler'),
+                          React.createElement('button', { onClick: () => requestConfirm("saveProduct", null, saveProductEdit), className: 'flex-1 py-2 bg-indigo-600 text-white rounded-lg' }, 'Enregistrer')
+                        )
+                      )
+                    )
+                  )
+              )
+            )
+          ),
+          React.createElement('button', { onClick: closeModal, className: 'w-full py-3 bg-indigo-600 text-white rounded-xl mt-4 font-medium hover:bg-indigo-500' }, 'Fermer')
+        )
+      );
+    };
+
     const App = () => {
       const [isAdmin, setIsAdmin] = useState(false);
       const [currentView, setCurrentView] = useState('home');
@@ -462,7 +584,7 @@
             qty: newProduct.qty,
             price: newProduct.price,
             image: imageUrl,
-            hidden: false   // ← nouveau produit visible par défaut
+            hidden: false
           };
           setBrands(brands.map(b => b.id === newProduct.brandId ? { ...b, products: [...b.products, newProductObj] } : b));
           setNewProduct({ name: "", qty: "", price: "", imageFile: null, brandId: null });
@@ -495,7 +617,6 @@
         notify("Produit supprimé"); 
       };
       
-      // Fonction pour masquer/afficher un produit
       const toggleProductHidden = (brandId, productId) => {
         setBrands(prevBrands => prevBrands.map(brand => {
           if (brand.id !== brandId) return brand;
@@ -506,6 +627,7 @@
             )
           };
         }));
+        notify("Visibilité du produit modifiée");
       };
       
       // ========== TRAITEMENT PAR LOT AVEC IMGBB ==========
@@ -531,7 +653,6 @@
           let updatedBrands = [...brands];
           const brandIndex = updatedBrands.findIndex(b => b.id === selectedBrandForBatch);
           if (brandIndex === -1) throw new Error('La marque sélectionnée n\'existe plus.');
-          const brandName = updatedBrands[brandIndex].name;
           let currentProducts = updatedBrands[brandIndex].products;
           let createdCount = 0, updatedCount = 0, errorCount = 0;
           for (let i = 0; i < files.length; i++) {
@@ -556,7 +677,7 @@
                   qty: 0,
                   price: 0,
                   image: imageUrl,
-                  hidden: false   // ← nouveau produit visible par défaut
+                  hidden: false
                 };
                 currentProducts.push(newProductObj);
                 createdCount++;
@@ -600,7 +721,7 @@
         }
       };
       
-      // ========== Export/Import Excel (ajout de la colonne "Masqué") ==========
+      // ========== Export/Import Excel ==========
       const exportToExcel = () => {
         if(!window.XLSX){ notify("Excel non chargé"); return; }
         try {
@@ -640,7 +761,6 @@
               let qty = parseFloat(row[2]), price = parseFloat(row[3]);
               if(isNaN(qty)) { errors.push(`Ligne ${i+1}: Qté non numérique`); continue; }
               if(isNaN(price)) { errors.push(`Ligne ${i+1}: Prix non numérique`); continue; }
-              // La colonne "Masqué" (index 4) est optionnelle, on ne la lit pas pour l'instant (par défaut false)
               if(!brandProducts.has(brandName)) brandProducts.set(brandName, new Map());
               const prodMap = brandProducts.get(brandName);
               if(!prodMap.has(productName)) { prodMap.set(productName, { qty, price }); totalProducts++; }
@@ -848,7 +968,7 @@
               </div>
             </div>
             
-            {/* Vue Client (home) */}
+            {/* Vue Client (home) - avec panier en sidebar fixe sur desktop */}
             {!isAdmin && currentView === 'home' && (
               <div className="lg:flex lg:gap-6">
                 <div className="hidden lg:block lg:fixed lg:left-0 lg:top-0 lg:h-full lg:w-96 lg:min-w-[350px] lg:max-w-xl lg:bg-slate-800 lg:border-r lg:border-slate-700 lg:shadow-xl lg:p-6 lg:overflow-y-auto lg:z-30 lg:mt-16">
@@ -885,7 +1005,7 @@
                   )}
                 </div>
                 <div className="flex-1 lg:ml-96">
-                  <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-4 lg:gap-6">
+                  <div className="grid grid-cols-2 gap-4 lg:grid-cols-4 lg:gap-6">
                     {safeBrands.map(brand => (
                       <div key={brand.id} className="flex flex-col items-center gap-2 lg:scale-90 lg:origin-top">
                         <button onClick={() => openBrand(brand)} className="w-full aspect-square rounded-[24px] overflow-hidden border border-slate-700 bg-slate-800 shadow-md transition-transform active:scale-95 hover:shadow-lg hover:shadow-indigo-500/20">
@@ -899,7 +1019,7 @@
               </div>
             )}
             
-            {/* Vue des produits d'une marque (client) - avec filtrage des produits masqués */}
+            {/* Vue des produits d'une marque (client) - avec panier en sidebar fixe sur desktop */}
             {!isAdmin && currentView !== 'home' && (
               <div className="lg:flex lg:gap-6">
                 <div className="hidden lg:block lg:fixed lg:left-0 lg:top-0 lg:h-full lg:w-96 lg:min-w-[350px] lg:max-w-xl lg:bg-slate-800 lg:border-r lg:border-slate-700 lg:shadow-xl lg:p-6 lg:overflow-y-auto lg:z-30 lg:mt-16">
@@ -938,7 +1058,7 @@
                 <div className="flex-1 lg:ml-96">
                   <div className="grid grid-cols-2 gap-4 lg:grid-cols-4 lg:gap-6">
                     {safeSelectedBrand && safeSelectedBrand.products
-                      .filter(prod => !prod.hidden)   // ← Filtre : les produits masqués ne sont pas affichés
+                      .filter(prod => !prod.hidden)
                       .map(prod => (
                         <div key={prod.id} className="flex flex-col items-center gap-2 bg-slate-800/50 p-2 rounded-2xl shadow-sm border border-slate-700 lg:scale-90 lg:origin-top">
                           <button onClick={() => openProductModal(prod)} className="w-full aspect-square rounded-[20px] overflow-hidden border border-slate-600 bg-slate-700 active:scale-95 transition-transform">
@@ -953,11 +1073,11 @@
               </div>
             )}
             
-            {/* Vue Admin : Dashboard */}
+            {/* Vue Admin : Dashboard avec sidebar et bouton IMGbank en bas */}
             {isAdmin && currentView === 'home' && (
               <div className="lg:flex lg:gap-6">
-                <div className="hidden lg:block lg:w-72 lg:flex-shrink-0 lg:bg-slate-800 lg:rounded-xl lg:border lg:border-slate-700 lg:shadow-lg lg:p-4 lg:h-[calc(100vh-120px)] lg:overflow-y-auto lg:flex lg:flex-col lg:justify-between">
-                  <div>
+                <div className="hidden lg:flex lg:flex-col lg:w-72 lg:flex-shrink-0 lg:bg-slate-800 lg:rounded-xl lg:border lg:border-slate-700 lg:shadow-lg lg:p-4 lg:h-[calc(100vh-120px)] lg:overflow-y-auto">
+                  <div className="flex-1">
                     <h2 className="text-lg font-bold text-slate-100 mb-4">Administration</h2>
                     <div className="space-y-2">
                       <button onClick={() => setShowModal(true)} className="w-full text-left py-2 px-3 rounded-lg bg-slate-700 hover:bg-slate-600 transition-colors text-slate-200">🏷️ Ajouter une marque</button>
@@ -967,7 +1087,7 @@
                       <button onClick={() => setShowOrdersModal(true)} className="w-full text-left py-2 px-3 rounded-lg bg-slate-700 hover:bg-slate-600 transition-colors text-slate-200">📋 Commandes</button>
                     </div>
                   </div>
-                  <button onClick={() => setShowImgbbModal(true)} className="mt-6 w-full text-left py-2 px-3 rounded-lg bg-slate-700 hover:bg-slate-600 transition-colors text-slate-200 lg:opacity-50 lg:hover:opacity-100 lg:text-xs">
+                  <button onClick={() => setShowImgbbModal(true)} className="mt-auto w-full text-left py-2 px-3 rounded-lg bg-slate-700 hover:bg-slate-600 transition-colors text-slate-200 lg:opacity-50 lg:hover:opacity-100 lg:text-sm">
                     🖼️ IMGbank
                   </button>
                 </div>
@@ -984,7 +1104,7 @@
               </div>
             )}
             
-            {/* MODALES (les modifications principales se trouvent dans showManageModal) */}
+            {/* MODALES (autres que gestion) */}
             {showPinModal && (
               <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center p-4 z-50">
                 <div className="bg-slate-800 w-full max-w-[320px] rounded-2xl shadow-2xl p-6 border border-slate-700">
@@ -1304,10 +1424,11 @@
               </div>
             )}
             
-            {(showModal || showProductModal || showBrandSelect || showManageModal || editingBrand) && (
+            {/* Autres modales (ajout marque, produit) */}
+            {(showModal || showProductModal || showBrandSelect || editingBrand) && (
               <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
                 <div className="bg-slate-800 w-full p-6 lg:max-w-2xl lg:mx-auto rounded-[28px] border border-slate-700 shadow-2xl max-h-[80vh] overflow-y-auto">
-                  <div className="flex justify-end"><button onClick={()=>{ setShowModal(false); setShowProductModal(false); setShowBrandSelect(false); setShowManageModal(false); setEditingBrand(null); setEditingProduct(null); }} className="text-slate-400 text-2xl hover:text-slate-200">&times;</button></div>
+                  <div className="flex justify-end"><button onClick={()=>{ setShowModal(false); setShowProductModal(false); setShowBrandSelect(false); setEditingBrand(null); setEditingProduct(null); }} className="text-slate-400 text-2xl hover:text-slate-200">&times;</button></div>
                   {editingBrand && (
                     <>
                       <h2 className="text-slate-100 font-bold mb-6 text-lg border-l-4 border-indigo-500 pl-3">Modifier Marque</h2>
@@ -1324,61 +1445,6 @@
                       <input type="text" className="w-full p-3 mb-4 bg-slate-900 rounded-lg outline-none focus:ring-1 focus:ring-indigo-500 text-slate-100" value={newBrand.name} onChange={e=>setNewBrand({...newBrand, name:e.target.value})} />
                       <FileInput onFileSelect={(file) => setNewBrand({...newBrand, imageFile: file})} label="Image (optionnel)" />
                       <div className="flex gap-3"><button onClick={()=>setShowModal(false)} className="flex-1 py-3 bg-slate-700 rounded-xl font-medium text-slate-200">Annuler</button><button onClick={()=>requestConfirm("addBrand",null,addBrand)} className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-medium">Créer</button></div>
-                    </>
-                  )}
-                  {/* MODALE DE GESTION AVEC BOUTON MASQUER/AFFICHER */}
-                  {showManageModal && !editingBrand && (
-                    <>
-                      <h2 className="text-slate-100 font-bold mb-6 text-lg border-l-4 border-indigo-500 pl-3">Gestion</h2>
-                      {safeBrands.map(b => (
-                        <div key={b.id} className="mb-3">
-                          <button onClick={()=>setManageSelectedBrand(manageSelectedBrand===b.id?null:b.id)} className="w-full p-4 bg-slate-900 rounded-xl text-left font-semibold text-slate-200 shadow-sm border border-slate-700 hover:bg-slate-700">{b.name}</button>
-                          {manageSelectedBrand===b.id && (
-                            <div className="mt-2 pl-4">
-                              <div className="flex justify-center gap-2 mb-3">
-                                <button onClick={()=>requestConfirm("deleteBrand",{brandId:b.id},()=>deleteBrand(b.id))} className="px-3 py-1.5 bg-red-900/50 text-red-300 rounded-lg text-xs font-bold">✕ Supprimer</button>
-                                <button onClick={()=>setEditingBrand(b)} className="px-3 py-1.5 bg-slate-700 text-slate-200 rounded-lg text-xs font-bold">✎ Modifier</button>
-                              </div>
-                              {b.products.map(p => (
-                                <React.Fragment key={p.id}>
-                                  <div className="flex items-center gap-2 mb-2">
-                                    <button onClick={() => setEditingProduct(editingProduct?.id === p.id ? null : p)} className="flex-1 p-3 bg-slate-900 border border-slate-700 text-slate-200 text-xs font-medium rounded-lg shadow-sm hover:bg-slate-800 text-left">
-                                      {p.name} {p.hidden && <span className="ml-2 text-orange-400 text-[10px]">(masqué)</span>}
-                                    </button>
-                                    <button onClick={() => requestConfirm("deleteProduct", { brandId: b.id, productId: p.id }, () => deleteProduct(b.id, p.id))} className="w-8 h-8 bg-red-900/50 text-red-300 rounded-full font-bold active:scale-95 hover:bg-red-800/50">
-                                      ✕
-                                    </button>
-                                    {/* Bouton Masquer/Afficher */}
-                                    <button 
-                                      onClick={() => toggleProductHidden(b.id, p.id)} 
-                                      className={`w-8 h-8 rounded-full font-bold active:scale-95 ${p.hidden ? 'bg-orange-700 text-white' : 'bg-slate-700 text-slate-300'}`}
-                                      title={p.hidden ? "Afficher" : "Masquer"}
-                                    >
-                                      {p.hidden ? '👁️' : '🚫'}
-                                    </button>
-                                  </div>
-                                  {editingProduct && editingProduct.id === p.id && (
-                                    <div className="p-4 mt-2 mb-3 bg-slate-900 rounded-2xl border border-slate-700">
-                                      <label className="text-[9px] font-bold text-slate-400 uppercase">Nom</label>
-                                      <input type="text" value={editingProduct.name} className="w-full p-2 mb-2 bg-slate-800 rounded-lg border border-slate-700 text-slate-100" onChange={e => setEditingProduct({...editingProduct, name: e.target.value})} />
-                                      <label className="text-[9px] font-bold text-slate-400 uppercase">Quantité</label>
-                                      <input type="number" value={editingProduct.qty} className="w-full p-2 mb-2 bg-slate-800 rounded-lg border border-slate-700 text-slate-100" onChange={e => setEditingProduct({...editingProduct, qty: e.target.value})} />
-                                      <label className="text-[9px] font-bold text-slate-400 uppercase">Prix</label>
-                                      <input type="number" value={editingProduct.price} className="w-full p-2 mb-3 bg-slate-800 rounded-lg border border-slate-700 text-slate-100" onChange={e => setEditingProduct({...editingProduct, price: e.target.value})} />
-                                      <FileInput onFileSelect={(file) => setEditingProduct({...editingProduct, imageFile: file})} label="Nouvelle image (optionnel)" />
-                                      <div className="flex gap-2">
-                                        <button onClick={() => setEditingProduct(null)} className="flex-1 py-2 bg-slate-700 border border-slate-600 rounded-lg text-slate-200">Annuler</button>
-                                        <button onClick={() => requestConfirm("saveProduct", null, saveProductEdit)} className="flex-1 py-2 bg-indigo-600 text-white rounded-lg">Enregistrer</button>
-                                      </div>
-                                    </div>
-                                  )}
-                                </React.Fragment>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                      <button onClick={()=>setShowManageModal(false)} className="w-full py-3 bg-indigo-600 text-white rounded-xl mt-4 font-medium hover:bg-indigo-500">Fermer</button>
                     </>
                   )}
                   {showBrandSelect && !editingBrand && (
@@ -1402,6 +1468,23 @@
               </div>
             )}
             
+            {/* Modale de gestion des produits (refactorisée) */}
+            {showManageModal && (
+              <ManageProductsModal 
+                brands={brands}
+                setBrands={setBrands}
+                editingProduct={editingProduct}
+                setEditingProduct={setEditingProduct}
+                manageSelectedBrand={manageSelectedBrand}
+                setManageSelectedBrand={setManageSelectedBrand}
+                toggleProductHidden={toggleProductHidden}
+                deleteProduct={deleteProduct}
+                setEditingBrand={setEditingBrand}
+                requestConfirm={requestConfirm}
+                closeModal={() => setShowManageModal(false)}
+              />
+            )}
+            
             {confirmAction && (
               <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-[200]">
                 <div className="bg-slate-800 w-full max-w-[280px] lg:max-w-md lg:mx-auto rounded-2xl p-5 shadow-2xl border border-slate-700">
@@ -1417,7 +1500,7 @@
             {isAdmin && <DebugConsole />}
           </div>
           
-          {/* Barre de navigation mobile */}
+          {/* Barre de navigation mobile (inchangée) */}
           <div className="mobile-bottom-nav">
             <button 
               onClick={() => setShowCartModal(true)} 
