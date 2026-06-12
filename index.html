@@ -1,12 +1,3 @@
-Voici les corrections :
-
-1. Bug de fermeture de la marque : Ajout de e.stopPropagation() sur les boutons d'action (masquer, supprimer, modifier) dans ManageProductsModal pour éviter que le clic ne remonte et ne referme l'expansion de la marque.
-2. Ajout du toggle "Stock intelligent" :
-   · Un nouvel état smartStock est créé dans App (valeur par défaut true, sauvegardée dans localStorage).
-   · Ce toggle est passé à ManageProductsModal et affiché en haut de la modale.
-   · Lorsqu'il est désactivé, la fonction updateOrderStatus n'appelle plus updateStockFromOrder, donc le stock n'est pas déduit.
-
-```html
 <!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -1760,4 +1751,3 @@ Voici les corrections :
   </script>
 </body>
 </html>
-```
