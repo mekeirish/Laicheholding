@@ -107,7 +107,6 @@
       return str.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     };
 
-    // Redimensionnement d'image en conservant le format (PNG pour transparence)
     const resizeImage = (file, maxWidth = 800) => {
       return new Promise((resolve, reject) => {
         if (!file.type.startsWith('image/')) {
@@ -230,7 +229,6 @@
       });
     };
 
-    // Composant modale de gestion des produits avec recherche
     const ManageProductsModal = ({ 
       brands, setBrands, 
       editingProduct, setEditingProduct, 
@@ -948,7 +946,6 @@
             if(!rows || rows.length<2) throw new Error("Fichier vide");
             const brandProducts = new Map();
             let totalProducts = 0, errors = [];
-            // Déterminer l'index de la colonne Pack (colonne 4 si présente)
             const headerRow = rows[0];
             const packColIndex = headerRow.findIndex(cell => cell && cell.toString().toLowerCase().includes("pack"));
             for(let i=1; i<rows.length; i++) {
@@ -1079,9 +1076,15 @@
         notify(`Commande ${status === "processed" ? "traitée" : "livrée"}`);
       };
       
+      const cancelOrder = (oid) => {
+        setOrders(orders.map(o => o.id === oid ? {...o, status: "cancelled"} : o));
+        notify("Commande annulée");
+      };
+      
       const newOrders = orders.filter(o => o.status === "new");
       const processedOrders = orders.filter(o => o.status === "processed");
       const deliveredOrders = orders.filter(o => o.status === "delivered");
+      const cancelledOrders = orders.filter(o => o.status === "cancelled");
       const requestConfirm = (type, payload, cb) => setConfirmAction({ type, payload, callback: cb });
       const cancelConfirm = () => setConfirmAction(null);
       const executeConfirm = () => { if(confirmAction?.callback) confirmAction.callback(); setConfirmAction(null); };
@@ -1304,13 +1307,20 @@
                       .filter(prod => !prod.hidden)
                       .map(prod => {
                         const effectivePrice = prod.price * (prod.pack || 1);
+                        const packValue = prod.pack || 1;
                         return (
                           <div key={prod.id} className="flex flex-col items-center gap-2 bg-slate-800/50 p-2 rounded-2xl shadow-sm border border-slate-700 lg:scale-90 lg:origin-top">
                             <button onClick={() => openProductModal(prod)} className="w-full aspect-square rounded-[20px] overflow-hidden border border-slate-600 bg-slate-700 active:scale-95 transition-transform">
                               {prod.image ? <img src={prod.image} className="w-full h-full object-cover" /> : <div className="w-full h-full bg-slate-700 flex items-center justify-center text-[10px] text-slate-400 font-medium">PROD</div>}
                             </button>
                             <span className="text-slate-200 font-medium text-xs text-center px-1 lg:text-[11px]">{prod.name}</span>
-                            {showPrices && <span className="text-indigo-400 font-bold text-sm bg-slate-800 px-3 py-1 rounded-full lg:text-xs">{effectivePrice} DZD</span>}
+                            {showPrices && (
+                              <div className="flex flex-col items-center gap-0.5">
+                                <span className="text-indigo-400 font-bold text-sm bg-slate-800 px-3 py-1 rounded-full lg:text-xs">{effectivePrice} DZD</span>
+                                {packValue > 1 && <span className="text-[9px] text-slate-400">Pack de {packValue}</span>}
+                              </div>
+                            )}
+                            {!showPrices && packValue > 1 && <span className="text-[9px] text-slate-400">Pack de {packValue}</span>}
                           </div>
                         );
                       })}
@@ -1423,9 +1433,14 @@
                   <div className="aspect-square bg-slate-700">{selectedProduct.image ? <img src={selectedProduct.image} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-slate-400 text-sm">Pas d'image</div>}</div>
                   <div className="p-5">
                     <h3 className="text-xl font-bold text-slate-100">{selectedProduct.name}</h3>
-                    {showPrices && <p className="text-slate-400 text-sm mt-1">Prix unitaire (par pack) : {selectedProduct.price * (selectedProduct.pack || 1)} DZD</p>}
+                    {showPrices && (
+                      <>
+                        <p className="text-slate-400 text-sm mt-1">Prix : {selectedProduct.price * (selectedProduct.pack || 1)} DZD</p>
+                        {(selectedProduct.pack || 1) > 1 && <p className="text-slate-400 text-xs">Pack de {selectedProduct.pack} unités</p>}
+                      </>
+                    )}
                     <div className="flex items-center justify-between mt-4">
-                      <span className="text-slate-300 font-medium">Quantité (packs)</span>
+                      <span className="text-slate-300 font-medium">Pack de </span>
                       <div className="flex items-center gap-3">
                         <button onClick={() => setProductQuantity(Math.max(1, productQuantity-1))} className="w-8 h-8 bg-slate-700 rounded-full font-bold text-slate-200 active:scale-95">-</button>
                         <span className="w-8 text-center font-semibold text-slate-100">{productQuantity}</span>
@@ -1460,10 +1475,11 @@
               <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
                 <div className="bg-slate-800 w-full max-w-[340px] lg:max-w-4xl lg:mx-auto lg:p-8 rounded-2xl shadow-2xl max-h-[85vh] flex flex-col border border-slate-700">
                   <div className="p-4 border-b border-slate-700 flex justify-between items-center lg:px-6"><h2 className="text-lg font-bold text-slate-100 lg:text-xl">Commandes</h2><button onClick={() => setShowOrdersModal(false)} className="text-slate-400 text-2xl hover:text-slate-200">&times;</button></div>
-                  <div className="flex border-b border-slate-700">
-                    <button onClick={() => setOrdersActiveTab("new")} className={`flex-1 py-3 text-xs font-medium lg:text-base ${ordersActiveTab==="new"?"text-indigo-400 border-b-2 border-indigo-400":"text-slate-400"}`}>Nouvelles ({newOrders.length})</button>
-                    <button onClick={() => setOrdersActiveTab("processed")} className={`flex-1 py-3 text-xs font-medium lg:text-base ${ordersActiveTab==="processed"?"text-indigo-400 border-b-2 border-indigo-400":"text-slate-400"}`}>Traitées ({processedOrders.length})</button>
-                    <button onClick={() => setOrdersActiveTab("delivered")} className={`flex-1 py-3 text-xs font-medium lg:text-base ${ordersActiveTab==="delivered"?"text-indigo-400 border-b-2 border-indigo-400":"text-slate-400"}`}>Livrées ({deliveredOrders.length})</button>
+                  <div className="flex border-b border-slate-700 overflow-x-auto">
+                    <button onClick={() => setOrdersActiveTab("new")} className={`flex-1 py-3 text-xs font-medium lg:text-base whitespace-nowrap ${ordersActiveTab==="new"?"text-indigo-400 border-b-2 border-indigo-400":"text-slate-400"}`}>Nouvelles ({newOrders.length})</button>
+                    <button onClick={() => setOrdersActiveTab("processed")} className={`flex-1 py-3 text-xs font-medium lg:text-base whitespace-nowrap ${ordersActiveTab==="processed"?"text-indigo-400 border-b-2 border-indigo-400":"text-slate-400"}`}>Traitées ({processedOrders.length})</button>
+                    <button onClick={() => setOrdersActiveTab("delivered")} className={`flex-1 py-3 text-xs font-medium lg:text-base whitespace-nowrap ${ordersActiveTab==="delivered"?"text-indigo-400 border-b-2 border-indigo-400":"text-slate-400"}`}>Livrées ({deliveredOrders.length})</button>
+                    <button onClick={() => setOrdersActiveTab("cancelled")} className={`flex-1 py-3 text-xs font-medium lg:text-base whitespace-nowrap ${ordersActiveTab==="cancelled"?"text-indigo-400 border-b-2 border-indigo-400":"text-slate-400"}`}>Annulées ({cancelledOrders.length})</button>
                   </div>
                   <div className="flex-1 overflow-y-auto p-3 lg:p-6">
                     {ordersActiveTab === "new" && (newOrders.length===0?<p className="text-center text-slate-400 py-4">Aucune nouvelle commande</p>:newOrders.map(order=>{
@@ -1485,7 +1501,10 @@
                           </div>
                           <div className="flex justify-between items-center mt-2 pt-2 border-t border-slate-600">
                             {showPrices ? <span className="font-bold text-indigo-400 lg:text-base">Total : {order.total?.toFixed(2) || '0.00'} DZD</span> : <span className="font-bold text-slate-400">Total : •••</span>}
-                            <button onClick={()=>requestConfirm("update",{orderId:order.id,newStatus:"processed"},()=>updateOrderStatus(order.id,"processed"))} className="px-3 py-1 bg-indigo-600 text-white rounded-lg text-xs font-bold lg:text-sm">Marquer traitée</button>
+                            <div className="flex gap-2">
+                              <button onClick={()=>requestConfirm("update",{orderId:order.id,newStatus:"processed"},()=>updateOrderStatus(order.id,"processed"))} className="px-3 py-1 bg-indigo-600 text-white rounded-lg text-xs font-bold lg:text-sm">Traiter</button>
+                              <button onClick={()=>cancelOrder(order.id)} className="px-3 py-1 bg-red-700 text-white rounded-lg text-xs font-bold lg:text-sm">Annuler</button>
+                            </div>
                           </div>
                         </div>
                       );
@@ -1509,7 +1528,10 @@
                           </div>
                           <div className="flex justify-between items-center mt-2 pt-2 border-t border-slate-600">
                             {showPrices ? <span className="font-bold text-indigo-400 lg:text-base">Total : {order.total?.toFixed(2) || '0.00'} DZD</span> : <span className="font-bold text-slate-400">Total : •••</span>}
-                            <button onClick={()=>requestConfirm("update",{orderId:order.id,newStatus:"delivered"},()=>updateOrderStatus(order.id,"delivered"))} className="px-3 py-1 bg-indigo-600 text-white rounded-lg text-xs font-bold lg:text-sm">Marquer livrée</button>
+                            <div className="flex gap-2">
+                              <button onClick={()=>updateOrderStatus(order.id,"delivered")} className="px-3 py-1 bg-indigo-600 text-white rounded-lg text-xs font-bold lg:text-sm">Livrer</button>
+                              <button onClick={()=>cancelOrder(order.id)} className="px-3 py-1 bg-red-700 text-white rounded-lg text-xs font-bold lg:text-sm">Annuler</button>
+                            </div>
                           </div>
                         </div>
                       );
@@ -1540,7 +1562,38 @@
                               </div>
                               <div className="flex justify-between items-center mt-2 pt-2 border-t border-slate-600">
                                 {showPrices ? <span className="font-bold text-indigo-400 lg:text-base">Total : {order.total?.toFixed(2) || '0.00'} DZD</span> : <span className="font-bold text-slate-400">Total : •••</span>}
-                                <span className="text-xs text-emerald-400">Livrée</span>
+                                <div className="flex gap-2">
+                                  <button onClick={()=>cancelOrder(order.id)} className="px-3 py-1 bg-red-700 text-white rounded-lg text-xs font-bold lg:text-sm">Annuler</button>
+                                  <span className="text-xs text-emerald-400">Livrée</span>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                    {ordersActiveTab === "cancelled" && (
+                      <div>
+                        {cancelledOrders.length === 0 ? <p className="text-center text-slate-400 py-4">Aucune commande annulée</p> : cancelledOrders.map(order=>{
+                          const safeItems = Array.isArray(order.items) ? order.items : [];
+                          return (
+                            <div key={order.id} className="mb-4 p-3 bg-slate-700/50 rounded-xl border border-red-800/50 opacity-75">
+                              <div className="text-xs text-slate-400 mb-1 lg:text-sm">{order.timestamp}</div>
+                              <div className="font-semibold text-slate-100 lg:text-base">{order.delivery?.name || 'Nom inconnu'}</div>
+                              <div className="text-xs text-slate-300 lg:text-sm">{order.delivery?.address || ''}</div>
+                              {order.delivery?.phone && <div className="text-xs text-slate-300 lg:text-sm">📞 {order.delivery.phone}</div>}
+                              {order.delivery?.instructions && <div className="text-xs italic text-slate-400 mt-1 lg:text-sm">📝 {order.delivery.instructions}</div>}
+                              <div className="mt-2 space-y-1">
+                                {safeItems.map((item,idx)=>(
+                                  <div key={idx} className="flex justify-between text-xs text-slate-300 lg:text-sm">
+                                    <span>{item.quantity}× {item.product?.name || 'Produit supprimé'}</span>
+                                    {showPrices && item.product?.price ? <span>{(item.product.price * (item.product.pack || 1) * item.quantity).toFixed(2)} DZD</span> : <span>•••</span>}
+                                  </div>
+                                ))}
+                              </div>
+                              <div className="flex justify-between items-center mt-2 pt-2 border-t border-red-800/50">
+                                {showPrices ? <span className="font-bold text-indigo-400 lg:text-base">Total : {order.total?.toFixed(2) || '0.00'} DZD</span> : <span className="font-bold text-slate-400">Total : •••</span>}
+                                <span className="text-xs text-red-400">Annulée</span>
                               </div>
                             </div>
                           );
