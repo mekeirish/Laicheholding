@@ -231,7 +231,8 @@
     const ManageProductsModal = ({ 
       brands, setBrands, 
       editingProduct, setEditingProduct, 
-      toggleProductHidden, deleteProduct, setEditingBrand,
+      toggleProductHidden, deleteProduct, deleteBrand,
+      setEditingBrand,
       requestConfirm, closeModal
     }) => {
       const [searchTerm, setSearchTerm] = useState('');
@@ -1498,10 +1499,10 @@
                         <input type="file" className="hidden" accept=".xlsx,.xls,.csv" onChange={(e)=>{ if(e.target.files[0]) analyzeImportFile(e.target.files[0]); e.target.value=''; }} />
                       </label>
                       <select 
-                        value={selectedBrandForBatch === null ? "" : selectedBrandForBatch} 
+                        value={selectedBrandForBatch === null ? "" : String(selectedBrandForBatch)} 
                         onChange={(e) => {
                           const val = e.target.value;
-                          setSelectedBrandForBatch(val === "" ? null : parseInt(val));
+                          setSelectedBrandForBatch(val === "" ? null : Number(val));
                         }}
                         className="w-full p-2 bg-slate-900 rounded-lg border border-slate-700 text-slate-200 text-sm"
                       >
@@ -1555,10 +1556,10 @@
                   </div>
                   <label className="text-[10px] uppercase font-bold text-slate-400">Choisir la marque cible</label>
                   <select 
-                    value={selectedBrandForBatch === null ? "" : selectedBrandForBatch}
+                    value={selectedBrandForBatch === null ? "" : String(selectedBrandForBatch)}
                     onChange={(e) => {
                       const val = e.target.value;
-                      setSelectedBrandForBatch(val === "" ? null : parseInt(val));
+                      setSelectedBrandForBatch(val === "" ? null : Number(val));
                     }}
                     className="w-full p-2 mb-4 bg-slate-900 rounded-lg border border-slate-700 text-slate-200 text-sm"
                     disabled={isUploadingBatch}
@@ -1673,6 +1674,7 @@
                 setEditingProduct={setEditingProduct}
                 toggleProductHidden={toggleProductHidden}
                 deleteProduct={deleteProduct}
+                deleteBrand={deleteBrand}
                 setEditingBrand={setEditingBrand}
                 requestConfirm={requestConfirm}
                 closeModal={() => setShowManageModal(false)}
