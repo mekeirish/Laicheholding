@@ -446,8 +446,10 @@
       const [confirmAction, setConfirmAction] = useState(null);
       const [showPinModal, setShowPinModal] = useState(false);
       const [pinCode, setPinCode] = useState('');
-      const [showPrices, setShowPrices] = useState(() => {
-        const saved = localStorage.getItem('showPrices');
+      
+      // État pour l'affichage des prix pour les clients (paramètre global)
+      const [showPricesForClients, setShowPricesForClients] = useState(() => {
+        const saved = localStorage.getItem('showPricesForClients');
         return saved !== null ? saved === 'true' : true;
       });
       
@@ -500,12 +502,13 @@
       const [firebaseReady, setFirebaseReady] = useState(false);
       const initialLoadDone = useRef(false);
       
-      useEffect(() => {
-        localStorage.setItem('showPrices', showPrices);
-      }, [showPrices]);
+      // Sauvegarde locale des préférences
       useEffect(() => {
         localStorage.setItem('smartStock', smartStock);
       }, [smartStock]);
+      useEffect(() => {
+        localStorage.setItem('showPricesForClients', showPricesForClients);
+      }, [showPricesForClients]);
       
       const addLog = useCallback((type, ...args) => {
         const timestamp = new Date().toLocaleTimeString();
@@ -566,8 +569,9 @@
         Promise.all([
           db.ref('settings/logoUrl').once('value'),
           db.ref('data').once('value'),
-          db.ref('orders').once('value')
-        ]).then(([logoSnap, dataSnap, ordersSnap]) => {
+          db.ref('orders').once('value'),
+          db.ref('settings/showPricesForClients').once('value')
+        ]).then(([logoSnap, dataSnap, ordersSnap, pricesSnap]) => {
           const logo = logoSnap.val();
           if (logo && typeof logo === 'string') {
             setLogoUrl(logo);
@@ -575,6 +579,11 @@
           } else {
             setLogoUrl('');
             localStorage.removeItem('mainLogoUrl');
+          }
+          const pricesSetting = pricesSnap.val();
+          if (pricesSetting !== null && typeof pricesSetting === 'boolean') {
+            setShowPricesForClients(pricesSetting);
+            localStorage.setItem('showPricesForClients', pricesSetting);
           }
           if (dataSnap.val()) {
             let raw = dataSnap.val();
@@ -623,6 +632,13 @@
             .catch(err => addLog('error', 'Erreur suppression logo: ' + err.message));
         }
       }, [logoUrl, firebaseReady]);
+      // Sauvegarde du paramètre d'affichage des prix pour les clients
+      useEffect(() => {
+        if (!firebaseReady || !initialLoadDone.current) return;
+        window.firebase.database().ref('settings/showPricesForClients').set(showPricesForClients)
+          .then(() => addLog('log', 'showPricesForClients sauvegardé'))
+          .catch(err => addLog('error', 'Erreur sauvegarde showPricesForClients: ' + err.message));
+      }, [showPricesForClients, firebaseReady]);
       
       useEffect(() => { localStorage.setItem('marketHubCart', JSON.stringify(cart)); }, [cart]);
       useEffect(() => { localStorage.setItem('marketHubBrands', JSON.stringify(brands)); }, [brands]);
@@ -668,7 +684,7 @@
       };
       
       const checkStockAvailability = (orderItems) => {
-        if (!smartStock) return { ok: true }; // Pas de vérification si stock intelligent désactivé
+        if (!smartStock) return { ok: true };
         for (const item of orderItems) {
           const brand = brands.find(b => b.id === item.brandId);
           if (!brand) return { ok: false, message: `Marque introuvable pour ${item.product.name}` };
@@ -683,7 +699,7 @@
       };
       
       const updateStockFromOrder = (orderItems) => {
-        if (!smartStock) return true; // Ne pas modifier le stock si désactivé
+        if (!smartStock) return true;
         let updatedBrands = [...brands];
         let hasError = false;
         let errorMessage = '';
@@ -1204,6 +1220,14 @@
       const safeBrands = Array.isArray(brands) ? brands : [];
       const safeSelectedBrand = selectedBrand && selectedBrand.products && Array.isArray(selectedBrand.products) ? selectedBrand : null;
       
+      // Fonction utilitaire pour déterminer si les prix doivent être affichés pour l'utilisateur courant
+      const shouldShowPrices = () => {
+        // L'admin voit toujours les prix
+        if (isAdmin) return true;
+        // Les clients voient selon le paramètre global
+        return showPricesForClients;
+      };
+      
       return (
         <div className="fixed inset-0 bg-slate-900 flex justify-center font-sans">
           {notification && <div className="fixed top-6 z-[100] bg-slate-800 text-slate-100 px-6 py-3 rounded-full text-xs font-bold shadow-2xl animate-fade-in-down border border-indigo-500/30">{notification}</div>}
@@ -1219,7 +1243,7 @@
               </div>
               <div className="flex items-center gap-2">
                 {isAdmin && (
-                  <button onClick={() => setShowPrices(!showPrices)} className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition-all active:scale-95 ${showPrices ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-300'}`} title={showPrices ? "Masquer les prix" : "Afficher les prix"}>{showPrices ? 'DZD' : 'DZD\u0337'}</button>
+                  <button onClick={() => setShowPricesForClients(!showPricesForClients)} className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition-all active:scale-95 ${showPricesForClients ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-300'}`} title={showPricesForClients ? "Masquer les prix pour les clients" : "Afficher les prix pour les clients"}>{showPricesForClients ? 'DZD' : 'DZD\u0337'}</button>
                 )}
                 <button onClick={toggleAdmin} className={`px-4 py-1 text-[10px] font-semibold uppercase tracking-widest rounded-lg border transition-all ${isAdmin ? "bg-indigo-600 text-white border-indigo-500" : "bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700"}`}>{isAdmin ? "Admin" : "Connexion"}</button>
               </div>
@@ -1242,8 +1266,8 @@
                             </div>
                             <div className="flex-1">
                               <p className="font-semibold text-slate-100 text-sm">{item.product.name}</p>
-                              <p className="text-slate-400 text-xs">{item.brandName} · {item.quantity} × {showPrices ? `${effectivePrice} DZD` : ''}</p>
-                              {showPrices && <p className="text-indigo-400 text-xs font-bold">{(effectivePrice * item.quantity).toFixed(2)} DZD</p>}
+                              <p className="text-slate-400 text-xs">{item.brandName} · {item.quantity} × {shouldShowPrices() ? `${effectivePrice} DZD` : ''}</p>
+                              {shouldShowPrices() && <p className="text-indigo-400 text-xs font-bold">{(effectivePrice * item.quantity).toFixed(2)} DZD</p>}
                             </div>
                             <button onClick={() => removeFromCart(idx)} className="w-8 h-8 bg-red-900/50 text-red-300 rounded-full font-bold active:scale-95 hover:bg-red-800/50">✕</button>
                           </div>
@@ -1253,7 +1277,7 @@
                   )}
                   {cart.length > 0 && (
                     <div className="mt-6 pt-4 border-t border-slate-700 sticky bottom-0 bg-slate-800">
-                      {showPrices && (
+                      {shouldShowPrices() && (
                         <div className="flex justify-between font-bold text-slate-100 mb-3">
                           <span>Total</span>
                           <span className="text-indigo-400">{cartTotal.toFixed(2)} DZD</span>
@@ -1295,8 +1319,8 @@
                             </div>
                             <div className="flex-1">
                               <p className="font-semibold text-slate-100 text-sm">{item.product.name}</p>
-                              <p className="text-slate-400 text-xs">{item.brandName} · {item.quantity} × {showPrices ? `${effectivePrice} DZD` : ''}</p>
-                              {showPrices && <p className="text-indigo-400 text-xs font-bold">{(effectivePrice * item.quantity).toFixed(2)} DZD</p>}
+                              <p className="text-slate-400 text-xs">{item.brandName} · {item.quantity} × {shouldShowPrices() ? `${effectivePrice} DZD` : ''}</p>
+                              {shouldShowPrices() && <p className="text-indigo-400 text-xs font-bold">{(effectivePrice * item.quantity).toFixed(2)} DZD</p>}
                             </div>
                             <button onClick={() => removeFromCart(idx)} className="w-8 h-8 bg-red-900/50 text-red-300 rounded-full font-bold active:scale-95 hover:bg-red-800/50">✕</button>
                           </div>
@@ -1306,7 +1330,7 @@
                   )}
                   {cart.length > 0 && (
                     <div className="mt-6 pt-4 border-t border-slate-700 sticky bottom-0 bg-slate-800">
-                      {showPrices && (
+                      {shouldShowPrices() && (
                         <div className="flex justify-between font-bold text-slate-100 mb-3">
                           <span>Total</span>
                           <span className="text-indigo-400">{cartTotal.toFixed(2)} DZD</span>
@@ -1329,13 +1353,13 @@
                               {prod.image ? <img src={prod.image} className="w-full h-full object-cover" /> : <div className="w-full h-full bg-slate-700 flex items-center justify-center text-[10px] text-slate-400 font-medium">PROD</div>}
                             </button>
                             <span className="text-slate-200 font-medium text-xs text-center px-1 lg:text-[11px]">{prod.name}</span>
-                            {showPrices && (
+                            {shouldShowPrices() && (
                               <div className="flex flex-col items-center gap-0.5">
                                 <span className="text-indigo-400 font-bold text-sm bg-slate-800 px-3 py-1 rounded-full lg:text-xs">{unitPrice} DZD</span>
                                 {packValue > 1 && <span className="text-[9px] text-slate-400">Pack de {packValue}</span>}
                               </div>
                             )}
-                            {!showPrices && packValue > 1 && <span className="text-[9px] text-slate-400">Pack de {packValue}</span>}
+                            {!shouldShowPrices() && packValue > 1 && <span className="text-[9px] text-slate-400">Pack de {packValue}</span>}
                           </div>
                         );
                       })}
@@ -1422,8 +1446,8 @@
                               <div className="w-12 h-12 bg-slate-700 rounded-lg overflow-hidden flex-shrink-0">{item.product.image ? <img src={item.product.image} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-[8px] text-slate-500">img</div>}</div>
                               <div className="flex-1">
                                 <p className="font-semibold text-slate-100 text-sm">{item.product.name}</p>
-                                <p className="text-slate-400 text-xs">{item.brandName} · {item.quantity} × {showPrices ? `${effectivePrice} DZD` : ''}</p>
-                                {showPrices && <p className="text-indigo-400 text-xs font-bold">{(effectivePrice * item.quantity).toFixed(2)} DZD</p>}
+                                <p className="text-slate-400 text-xs">{item.brandName} · {item.quantity} × {shouldShowPrices() ? `${effectivePrice} DZD` : ''}</p>
+                                {shouldShowPrices() && <p className="text-indigo-400 text-xs font-bold">{(effectivePrice * item.quantity).toFixed(2)} DZD</p>}
                               </div>
                               <button onClick={() => removeFromCart(idx)} className="w-8 h-8 bg-red-900/50 text-red-300 rounded-full font-bold active:scale-95 hover:bg-red-800/50">✕</button>
                             </div>
@@ -1434,7 +1458,7 @@
                   </div>
                   {cart.length > 0 && (
                     <div className="p-4 border-t border-slate-700">
-                      {showPrices && <div className="flex justify-between font-bold text-slate-100 mb-3"><span>Total</span><span className="text-indigo-400">{cartTotal.toFixed(2)} DZD</span></div>}
+                      {shouldShowPrices() && <div className="flex justify-between font-bold text-slate-100 mb-3"><span>Total</span><span className="text-indigo-400">{cartTotal.toFixed(2)} DZD</span></div>}
                       <button onClick={openDeliveryModal} className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold active:scale-95 hover:bg-indigo-500">Valider la commande</button>
                     </div>
                   )}
@@ -1448,7 +1472,7 @@
                   <div className="aspect-square bg-slate-700">{selectedProduct.image ? <img src={selectedProduct.image} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-slate-400 text-sm">Pas d'image</div>}</div>
                   <div className="p-5">
                     <h3 className="text-xl font-bold text-slate-100">{selectedProduct.name}</h3>
-                    {showPrices && (
+                    {shouldShowPrices() && (
                       <>
                         <p className="text-slate-400 text-sm mt-1">Prix unitaire : {selectedProduct.price} DZD</p>
                         {(selectedProduct.pack || 1) > 1 && <p className="text-slate-400 text-xs">{selectedProduct.pack} unités</p>}
@@ -1462,7 +1486,7 @@
                       </div>
                     </div>
                     <button onClick={addToCart} className="w-full mt-6 py-3 bg-indigo-600 text-white rounded-xl font-bold active:scale-95 hover:bg-indigo-500">
-                      Ajouter au panier {showPrices && `· ${(selectedProduct.price * (selectedProduct.pack || 1) * productQuantity).toFixed(2)} DZD`}
+                      Ajouter au panier {shouldShowPrices() && `· ${(selectedProduct.price * (selectedProduct.pack || 1) * productQuantity).toFixed(2)} DZD`}
                     </button>
                     <button onClick={() => setSelectedProduct(null)} className="w-full mt-3 py-2 bg-slate-700 text-slate-300 rounded-xl text-sm active:scale-95 hover:bg-slate-600">Fermer</button>
                   </div>
@@ -1509,12 +1533,12 @@
                             {safeItems.map((item,idx)=>(
                               <div key={idx} className="flex justify-between text-xs text-slate-300 lg:text-sm">
                                 <span>{item.quantity}× {item.product?.name || 'Produit supprimé'}</span>
-                                {showPrices && item.product?.price ? <span>{(item.product.price * (item.product.pack || 1) * item.quantity).toFixed(2)} DZD</span> : <span>•••</span>}
+                                {shouldShowPrices() && item.product?.price ? <span>{(item.product.price * (item.product.pack || 1) * item.quantity).toFixed(2)} DZD</span> : <span>•••</span>}
                               </div>
                             ))}
                           </div>
                           <div className="flex justify-between items-center mt-2 pt-2 border-t border-slate-600">
-                            {showPrices ? <span className="font-bold text-indigo-400 lg:text-base">Total : {order.total?.toFixed(2) || '0.00'} DZD</span> : <span className="font-bold text-slate-400">Total : •••</span>}
+                            {shouldShowPrices() ? <span className="font-bold text-indigo-400 lg:text-base">Total : {order.total?.toFixed(2) || '0.00'} DZD</span> : <span className="font-bold text-slate-400">Total : •••</span>}
                             <div className="flex gap-2">
                               <button onClick={()=>requestConfirm("update",{orderId:order.id,newStatus:"processed"},()=>updateOrderStatus(order.id,"processed"))} className="px-3 py-1 bg-indigo-600 text-white rounded-lg text-xs font-bold lg:text-sm">Traiter</button>
                               <button onClick={()=>cancelOrder(order.id)} className="px-3 py-1 bg-red-700 text-white rounded-lg text-xs font-bold lg:text-sm">Annuler</button>
@@ -1536,12 +1560,12 @@
                             {safeItems.map((item,idx)=>(
                               <div key={idx} className="flex justify-between text-xs text-slate-300 lg:text-sm">
                                 <span>{item.quantity}× {item.product?.name || 'Produit supprimé'}</span>
-                                {showPrices && item.product?.price ? <span>{(item.product.price * (item.product.pack || 1) * item.quantity).toFixed(2)} DZD</span> : <span>•••</span>}
+                                {shouldShowPrices() && item.product?.price ? <span>{(item.product.price * (item.product.pack || 1) * item.quantity).toFixed(2)} DZD</span> : <span>•••</span>}
                               </div>
                             ))}
                           </div>
                           <div className="flex justify-between items-center mt-2 pt-2 border-t border-slate-600">
-                            {showPrices ? <span className="font-bold text-indigo-400 lg:text-base">Total : {order.total?.toFixed(2) || '0.00'} DZD</span> : <span className="font-bold text-slate-400">Total : •••</span>}
+                            {shouldShowPrices() ? <span className="font-bold text-indigo-400 lg:text-base">Total : {order.total?.toFixed(2) || '0.00'} DZD</span> : <span className="font-bold text-slate-400">Total : •••</span>}
                             <div className="flex gap-2">
                               <button onClick={()=>updateOrderStatus(order.id,"delivered")} className="px-3 py-1 bg-indigo-600 text-white rounded-lg text-xs font-bold lg:text-sm">Livrer</button>
                               <button onClick={()=>cancelOrder(order.id)} className="px-3 py-1 bg-red-700 text-white rounded-lg text-xs font-bold lg:text-sm">Annuler</button>
@@ -1570,12 +1594,12 @@
                                 {safeItems.map((item,idx)=>(
                                   <div key={idx} className="flex justify-between text-xs text-slate-300 lg:text-sm">
                                     <span>{item.quantity}× {item.product?.name || 'Produit supprimé'}</span>
-                                    {showPrices && item.product?.price ? <span>{(item.product.price * (item.product.pack || 1) * item.quantity).toFixed(2)} DZD</span> : <span>•••</span>}
+                                    {shouldShowPrices() && item.product?.price ? <span>{(item.product.price * (item.product.pack || 1) * item.quantity).toFixed(2)} DZD</span> : <span>•••</span>}
                                   </div>
                                 ))}
                               </div>
                               <div className="flex justify-between items-center mt-2 pt-2 border-t border-slate-600">
-                                {showPrices ? <span className="font-bold text-indigo-400 lg:text-base">Total : {order.total?.toFixed(2) || '0.00'} DZD</span> : <span className="font-bold text-slate-400">Total : •••</span>}
+                                {shouldShowPrices() ? <span className="font-bold text-indigo-400 lg:text-base">Total : {order.total?.toFixed(2) || '0.00'} DZD</span> : <span className="font-bold text-slate-400">Total : •••</span>}
                                 <div className="flex gap-2">
                                   <button onClick={()=>cancelOrder(order.id)} className="px-3 py-1 bg-red-700 text-white rounded-lg text-xs font-bold lg:text-sm">Annuler</button>
                                   <span className="text-xs text-emerald-400">Livrée</span>
@@ -1601,12 +1625,12 @@
                                 {safeItems.map((item,idx)=>(
                                   <div key={idx} className="flex justify-between text-xs text-slate-300 lg:text-sm">
                                     <span>{item.quantity}× {item.product?.name || 'Produit supprimé'}</span>
-                                    {showPrices && item.product?.price ? <span>{(item.product.price * (item.product.pack || 1) * item.quantity).toFixed(2)} DZD</span> : <span>•••</span>}
+                                    {shouldShowPrices() && item.product?.price ? <span>{(item.product.price * (item.product.pack || 1) * item.quantity).toFixed(2)} DZD</span> : <span>•••</span>}
                                   </div>
                                 ))}
                               </div>
                               <div className="flex justify-between items-center mt-2 pt-2 border-t border-red-800/50">
-                                {showPrices ? <span className="font-bold text-indigo-400 lg:text-base">Total : {order.total?.toFixed(2) || '0.00'} DZD</span> : <span className="font-bold text-slate-400">Total : •••</span>}
+                                {shouldShowPrices() ? <span className="font-bold text-indigo-400 lg:text-base">Total : {order.total?.toFixed(2) || '0.00'} DZD</span> : <span className="font-bold text-slate-400">Total : •••</span>}
                                 <span className="text-xs text-red-400">Annulée</span>
                               </div>
                             </div>
