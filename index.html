@@ -291,6 +291,10 @@
           alert("Nom requis");
           return;
         }
+        // S'assurer que le pack est un nombre >= 1
+        let packValue = parseInt(editingProduct.pack);
+        if (isNaN(packValue) || packValue < 1) packValue = 1;
+        
         let imageUrl = editingProduct.image;
         if (editingProduct.imageFile) {
           try {
@@ -307,7 +311,9 @@
             ...editingProduct, 
             name: editingProduct.name.trim(), 
             image: imageUrl,
-            pack: parseInt(editingProduct.pack) || 1
+            pack: packValue,
+            qty: parseInt(editingProduct.qty) || 0,
+            price: parseFloat(editingProduct.price) || 0
           } : p) 
         })));
         setEditingProduct(null);
@@ -398,7 +404,16 @@
                         React.createElement('label', { className: 'text-[9px] font-bold text-slate-400 uppercase' }, 'Prix unitaire (de base)'),
                         React.createElement('input', { type: 'number', step: "0.01", value: editingProduct.price, className: 'w-full p-2 mb-2 bg-slate-800 rounded-lg border border-slate-700 text-slate-100', onChange: e => setEditingProduct({...editingProduct, price: parseFloat(e.target.value) || 0}) }),
                         React.createElement('label', { className: 'text-[9px] font-bold text-slate-400 uppercase' }, 'Pack (multiplicateur)'),
-                        React.createElement('input', { type: 'number', min: "1", value: editingProduct.pack || 1, className: 'w-full p-2 mb-3 bg-slate-800 rounded-lg border border-slate-700 text-slate-100', onChange: e => setEditingProduct({...editingProduct, pack: parseInt(e.target.value) || 1}) }),
+                        React.createElement('input', { 
+                          type: 'number', 
+                          min: "1", 
+                          value: editingProduct.pack === undefined || editingProduct.pack === null ? 1 : editingProduct.pack, 
+                          className: 'w-full p-2 mb-3 bg-slate-800 rounded-lg border border-slate-700 text-slate-100', 
+                          onChange: e => {
+                            const val = e.target.value;
+                            setEditingProduct({...editingProduct, pack: val === "" ? "" : parseInt(val)});
+                          }
+                        }),
                         React.createElement(FileInput, { onFileSelect: (file) => setEditingProduct({...editingProduct, imageFile: file}), label: 'Nouvelle image (optionnel)' }),
                         React.createElement('div', { className: 'flex gap-2' },
                           React.createElement('button', { onClick: () => setEditingProduct(null), className: 'flex-1 py-2 bg-slate-700 border border-slate-600 rounded-lg text-slate-200' }, 'Annuler'),
