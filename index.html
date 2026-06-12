@@ -257,12 +257,10 @@
         return matches;
       };
 
-      // Correction : ne pas réinitialiser expandedBrands quand searchTerm est vide
       useEffect(() => {
         if (searchTerm.trim()) {
           setExpandedBrands(getBrandsWithMatches());
         }
-        // Si searchTerm est vide, on ne touche pas à expandedBrands
       }, [searchTerm, brands]);
 
       const toggleBrand = (brandId) => {
@@ -376,7 +374,8 @@
                           onClick: (e) => { e.stopPropagation(); setEditingProduct(editingProduct?.id === p.id ? null : p); },
                           className: 'flex-1 p-3 bg-slate-900 border border-slate-700 text-slate-200 text-xs font-medium rounded-lg shadow-sm hover:bg-slate-800 text-left'
                         }, p.name, ' ', 
-                          React.createElement('span', { className: isLowStock ? 'text-red-400 font-bold' : 'text-slate-400' }, `(stock: ${stock}, pack: ${packValue})`),
+                          smartStock && React.createElement('span', { className: isLowStock ? 'text-red-400 font-bold' : 'text-slate-400' }, `(stock: ${stock}, pack: ${packValue})`),
+                          !smartStock && React.createElement('span', { className: 'text-slate-400' }, `(pack: ${packValue})`),
                           p.hidden && React.createElement('span', { className: 'ml-2 text-orange-400 text-[10px]' }, '(masqué)')
                         ),
                         React.createElement('button', { 
@@ -669,6 +668,7 @@
       };
       
       const checkStockAvailability = (orderItems) => {
+        if (!smartStock) return { ok: true }; // Pas de vérification si stock intelligent désactivé
         for (const item of orderItems) {
           const brand = brands.find(b => b.id === item.brandId);
           if (!brand) return { ok: false, message: `Marque introuvable pour ${item.product.name}` };
@@ -683,6 +683,7 @@
       };
       
       const updateStockFromOrder = (orderItems) => {
+        if (!smartStock) return true; // Ne pas modifier le stock si désactivé
         let updatedBrands = [...brands];
         let hasError = false;
         let errorMessage = '';
