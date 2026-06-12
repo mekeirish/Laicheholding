@@ -291,7 +291,6 @@
           alert("Nom requis");
           return;
         }
-        // S'assurer que le pack est un nombre >= 1
         let packValue = parseInt(editingProduct.pack);
         if (isNaN(packValue) || packValue < 1) packValue = 1;
         
@@ -1450,12 +1449,11 @@
                     <h3 className="text-xl font-bold text-slate-100">{selectedProduct.name}</h3>
                     {showPrices && (
                       <>
-                        <p className="text-slate-400 text-sm mt-1">Prix : {selectedProduct.price * (selectedProduct.pack || 1)} DZD</p>
-                        {(selectedProduct.pack || 1) > 1 && <p className="text-slate-400 text-xs">Pack de {selectedProduct.pack} unités</p>}
+                        <p className="text-slate-400 text-sm mt-1">Prix unitaire : {selectedProduct.price} DZD</p>
+                        {(selectedProduct.pack || 1) > 1 && <p className="text-slate-400 text-xs">{selectedProduct.pack} unités</p>}
                       </>
                     )}
                     <div className="flex items-center justify-between mt-4">
-                      <span className="text-slate-300 font-medium">Pack de </span>
                       <div className="flex items-center gap-3">
                         <button onClick={() => setProductQuantity(Math.max(1, productQuantity-1))} className="w-8 h-8 bg-slate-700 rounded-full font-bold text-slate-200 active:scale-95">-</button>
                         <span className="w-8 text-center font-semibold text-slate-100">{productQuantity}</span>
