@@ -257,12 +257,12 @@
         return matches;
       };
 
+      // Correction : ne pas réinitialiser expandedBrands quand searchTerm est vide
       useEffect(() => {
         if (searchTerm.trim()) {
           setExpandedBrands(getBrandsWithMatches());
-        } else {
-          setExpandedBrands(new Set());
         }
+        // Si searchTerm est vide, on ne touche pas à expandedBrands
       }, [searchTerm, brands]);
 
       const toggleBrand = (brandId) => {
@@ -1320,7 +1320,7 @@
                     {safeSelectedBrand && safeSelectedBrand.products
                       .filter(prod => !prod.hidden)
                       .map(prod => {
-                        const effectivePrice = prod.price * (prod.pack || 1);
+                        const unitPrice = prod.price;
                         const packValue = prod.pack || 1;
                         return (
                           <div key={prod.id} className="flex flex-col items-center gap-2 bg-slate-800/50 p-2 rounded-2xl shadow-sm border border-slate-700 lg:scale-90 lg:origin-top">
@@ -1330,7 +1330,7 @@
                             <span className="text-slate-200 font-medium text-xs text-center px-1 lg:text-[11px]">{prod.name}</span>
                             {showPrices && (
                               <div className="flex flex-col items-center gap-0.5">
-                                <span className="text-indigo-400 font-bold text-sm bg-slate-800 px-3 py-1 rounded-full lg:text-xs">{effectivePrice} DZD</span>
+                                <span className="text-indigo-400 font-bold text-sm bg-slate-800 px-3 py-1 rounded-full lg:text-xs">{unitPrice} DZD</span>
                                 {packValue > 1 && <span className="text-[9px] text-slate-400">Pack de {packValue}</span>}
                               </div>
                             )}
