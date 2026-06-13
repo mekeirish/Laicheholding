@@ -293,12 +293,12 @@
         if (isNaN(packValue) || packValue < 1) packValue = 1;
         
         let imageUrl = editingProduct.image;
-        if (editingProduct.imageFile) {
+        if (editingProduct.imageFile && editingProduct.imageFile instanceof File) {
           try {
             imageUrl = await uploadToImgBB(editingProduct.imageFile);
           } catch (err) {
             console.error('Upload image produit échoué:', err);
-            alert("Erreur lors de l'upload de l'image");
+            alert("Erreur lors de l'upload de l'image: " + err.message);
             return;
           }
         }
@@ -474,8 +474,15 @@
         const parsed = saved ? JSON.parse(saved) : [];
         return cleanBrands(parsed);
       });
-      const [newBrand, setNewBrand] = useState({ name: "", imageFile: null });
-      const [newProduct, setNewProduct] = useState({ name: "", qty: "", price: "", pack: "1", imageFile: null, brandId: null });
+      const [newBrand, setNewBrand] = useState({ name: "" });
+      const newBrandImageRef = useRef(null);
+      
+      const [newProduct, setNewProduct] = useState({ name: "", qty: "", price: "", pack: "1", brandId: null });
+      const newProductImageRef = useRef(null);
+      
+      const [editBrandImageRef] = useState(useRef(null));
+      const [editProductImageRef] = useState(useRef(null));
+      
       const [cart, setCart] = useState(() => {
         const savedCart = localStorage.getItem('marketHubCart');
         const parsed = savedCart ? JSON.parse(savedCart) : [];
@@ -738,10 +745,10 @@
         if (!firebaseReady) { notify("Firebase pas encore prêt"); return; }
         if (newBrand.name && newBrand.name.trim()) {
           let imageUrl = null;
-          // Vérifier que le fichier image est valide
-          if (newBrand.imageFile && newBrand.imageFile instanceof File) {
+          const file = newBrandImageRef.current?.files[0];
+          if (file && file instanceof File) {
             try {
-              imageUrl = await uploadToImgBB(newBrand.imageFile);
+              imageUrl = await uploadToImgBB(file);
             } catch (err) {
               addLog('error', 'Upload image marque échoué: ' + err.message);
               notify("Erreur lors de l'upload de l'image : " + err.message);
@@ -755,8 +762,8 @@
             products: []
           };
           setBrands([...brands, newBrandObj]);
-          // Réinitialiser le formulaire (y compris le champ fichier)
-          setNewBrand({ name: "", imageFile: null });
+          setNewBrand({ name: "" });
+          if (newBrandImageRef.current) newBrandImageRef.current.value = '';
           setShowModal(false);
           notify("Marque ajoutée");
         } else { notify("Nom requis"); }
@@ -768,9 +775,10 @@
         if (!firebaseReady) { notify("Firebase pas encore prêt"); return; }
         if (editingBrand.name && editingBrand.name.trim()) {
           let imageUrl = editingBrand.image;
-          if (editingBrand.imageFile && editingBrand.imageFile instanceof File) {
+          const file = editBrandImageRef.current?.files[0];
+          if (file && file instanceof File) {
             try {
-              imageUrl = await uploadToImgBB(editingBrand.imageFile);
+              imageUrl = await uploadToImgBB(file);
             } catch (err) {
               addLog('error', 'Upload image marque échoué: ' + err.message);
               notify("Erreur lors de l'upload de l'image : " + err.message);
@@ -787,9 +795,10 @@
         if (!firebaseReady) { notify("Firebase pas encore prêt"); return; }
         if (newProduct.name && newProduct.name.trim() && newProduct.brandId) {
           let imageUrl = null;
-          if (newProduct.imageFile && newProduct.imageFile instanceof File) {
+          const file = newProductImageRef.current?.files[0];
+          if (file && file instanceof File) {
             try {
-              imageUrl = await uploadToImgBB(newProduct.imageFile);
+              imageUrl = await uploadToImgBB(file);
             } catch (err) {
               addLog('error', 'Upload image produit échoué: ' + err.message);
               notify("Erreur lors de l'upload de l'image : " + err.message);
@@ -806,7 +815,8 @@
             hidden: false
           };
           setBrands(brands.map(b => b.id === newProduct.brandId ? { ...b, products: [...b.products, newProductObj] } : b));
-          setNewProduct({ name: "", qty: "", price: "", pack: "1", imageFile: null, brandId: null });
+          setNewProduct({ name: "", qty: "", price: "", pack: "1", brandId: null });
+          if (newProductImageRef.current) newProductImageRef.current.value = '';
           setShowProductModal(false);
           notify("Produit ajouté");
         } else { notify("Nom et marque requis"); }
@@ -816,9 +826,10 @@
         if (!firebaseReady) { notify("Firebase pas encore prêt"); return; }
         if (editingProduct.name && editingProduct.name.trim()) {
           let imageUrl = editingProduct.image;
-          if (editingProduct.imageFile && editingProduct.imageFile instanceof File) {
+          const file = editProductImageRef.current?.files[0];
+          if (file && file instanceof File) {
             try {
-              imageUrl = await uploadToImgBB(editingProduct.imageFile);
+              imageUrl = await uploadToImgBB(file);
             } catch (err) {
               addLog('error', 'Upload image produit échoué: ' + err.message);
               notify("Erreur lors de l'upload de l'image : " + err.message);
@@ -1784,7 +1795,10 @@
                       <h2 className="text-slate-100 font-bold mb-6 text-lg border-l-4 border-indigo-500 pl-3">Modifier Marque</h2>
                       <label className="text-[9px] uppercase font-bold text-slate-400">Nom</label>
                       <input type="text" className="w-full p-3 mb-4 bg-slate-900 rounded-lg outline-none focus:ring-1 focus:ring-indigo-500 text-slate-100" value={editingBrand.name} onChange={e=>setEditingBrand({...editingBrand, name:e.target.value})} />
-                      <FileInput onFileSelect={(file) => setEditingBrand({...editingBrand, imageFile: file})} label="Nouvelle image (optionnel)" />
+                      <div className="mb-4">
+                        <label className="block text-[9px] uppercase font-bold text-slate-400 tracking-wider mb-1">Nouvelle image (optionnel)</label>
+                        <input type="file" accept="image/*" ref={editBrandImageRef} className="w-full text-sm text-slate-400 file:mr-2 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-sm file:bg-slate-700 file:text-slate-200 hover:file:bg-slate-600" />
+                      </div>
                       <div className="flex gap-3"><button onClick={()=>setEditingBrand(null)} className="flex-1 py-3 bg-slate-700 rounded-xl font-medium text-slate-200">Annuler</button><button onClick={()=>requestConfirm("saveBrand",null,saveBrandEdit)} className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-medium">Enregistrer</button></div>
                     </>
                   )}
@@ -1793,7 +1807,10 @@
                       <h2 className="text-slate-100 font-bold mb-6 text-lg border-l-4 border-indigo-500 pl-3">Nouvelle Marque</h2>
                       <label className="text-[9px] uppercase font-bold text-slate-400">Nom</label>
                       <input type="text" className="w-full p-3 mb-4 bg-slate-900 rounded-lg outline-none focus:ring-1 focus:ring-indigo-500 text-slate-100" value={newBrand.name} onChange={e=>setNewBrand({...newBrand, name:e.target.value})} />
-                      <FileInput onFileSelect={(file) => setNewBrand({...newBrand, imageFile: file})} label="Image (optionnel)" />
+                      <div className="mb-4">
+                        <label className="block text-[9px] uppercase font-bold text-slate-400 tracking-wider mb-1">Image (optionnel)</label>
+                        <input type="file" accept="image/*" ref={newBrandImageRef} className="w-full text-sm text-slate-400 file:mr-2 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-sm file:bg-slate-700 file:text-slate-200 hover:file:bg-slate-600" />
+                      </div>
                       <div className="flex gap-3"><button onClick={()=>setShowModal(false)} className="flex-1 py-3 bg-slate-700 rounded-xl font-medium text-slate-200">Annuler</button><button onClick={()=>requestConfirm("addBrand",null,addBrand)} className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-medium">Créer</button></div>
                     </>
                   )}
@@ -1811,7 +1828,10 @@
                       <label className="text-[9px] uppercase font-bold text-slate-400">Quantité (stock)</label><input type="number" className="w-full p-3 mb-3 bg-slate-900 rounded-lg outline-none focus:ring-1 focus:ring-indigo-500 text-slate-100" onChange={e=>setNewProduct({...newProduct, qty:e.target.value})} />
                       <label className="text-[9px] uppercase font-bold text-slate-400">Prix unitaire (de base)</label><input type="number" step="0.01" className="w-full p-3 mb-3 bg-slate-900 rounded-lg outline-none focus:ring-1 focus:ring-indigo-500 text-slate-100" onChange={e=>setNewProduct({...newProduct, price:e.target.value})} />
                       <label className="text-[9px] uppercase font-bold text-slate-400">Pack (multiplicateur)</label><input type="number" min="1" className="w-full p-3 mb-3 bg-slate-900 rounded-lg outline-none focus:ring-1 focus:ring-indigo-500 text-slate-100" value={newProduct.pack} onChange={e=>setNewProduct({...newProduct, pack:e.target.value})} />
-                      <FileInput onFileSelect={(file) => setNewProduct({...newProduct, imageFile: file})} label="Image (optionnel)" />
+                      <div className="mb-4">
+                        <label className="block text-[9px] uppercase font-bold text-slate-400 tracking-wider mb-1">Image (optionnel)</label>
+                        <input type="file" accept="image/*" ref={newProductImageRef} className="w-full text-sm text-slate-400 file:mr-2 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-sm file:bg-slate-700 file:text-slate-200 hover:file:bg-slate-600" />
+                      </div>
                       <div className="flex gap-3"><button onClick={()=>setShowProductModal(false)} className="flex-1 py-3 bg-slate-700 rounded-xl font-medium text-slate-200">Annuler</button><button onClick={()=>requestConfirm("addProduct",null,addProduct)} className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-medium">Ajouter</button></div>
                     </>
                   )}
