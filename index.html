@@ -19,7 +19,6 @@
     }
   </script>
   <style>
-    /* ... (tous les styles existants, inchangés) ... */
     @media (max-width: 1023px) {
       .mobile-bottom-nav {
         display: flex;
@@ -642,7 +641,7 @@
       );
     };
 
-    // WhatsAppManager mis à jour avec stockage dans settings/
+    // WhatsAppManager (inchangé)
     const WhatsAppManager = ({ waConfig, setWaConfig, waNumeros, setWaNumeros, requestConfirm, closeModal, testNotification, saveWhatsAppData }) => {
       const [newNom, setNewNom] = useState('');
       const [newNumero, setNewNumero] = useState('');
@@ -896,9 +895,21 @@
       const initialLoadDone = useRef(false);
       const [newOrderLed, setNewOrderLed] = useState(false);
       
-      // WhatsApp state - stocké dans settings/whatsapp et settings/whatsapp_numeros
+      // WhatsApp state - stocké dans settings/
       const [waConfig, setWaConfig] = useState({ active: false, phone: "+34 644 52 74 88", apikey: "" });
       const [waNumeros, setWaNumeros] = useState([]);
+      
+      // ================= AJOUT : Mise à jour du badge PWA =================
+      useEffect(() => {
+        if (!navigator.setAppBadge) return; // API non supportée
+        const newOrdersCount = orders.filter(o => o.status === "new").length;
+        if (newOrdersCount > 0) {
+          navigator.setAppBadge(newOrdersCount).catch(e => console.warn("Erreur setAppBadge:", e));
+        } else {
+          navigator.clearAppBadge().catch(e => console.warn("Erreur clearAppBadge:", e));
+        }
+      }, [orders]);
+      // ====================================================================
       
       // Fonction d'envoi WhatsApp via CallMeBot
       const sendWhatsAppNotification = async (order) => {
@@ -958,7 +969,6 @@
           return;
         }
         const db = window.firebase.database();
-        // Stocker dans settings/whatsapp et settings/whatsapp_numeros
         const updates = {};
         updates['settings/whatsapp'] = config;
         updates['settings/whatsapp_numeros'] = numeros;
@@ -1049,7 +1059,6 @@
           }
         }).catch(err => addLog('error', 'Erreur chargement admins: ' + err.message));
         
-        // Chargement de la configuration WhatsApp depuis settings/
         db.ref('settings/whatsapp').once('value').then((snapshot) => {
           const data = snapshot.val();
           if (data) {
@@ -1769,6 +1778,7 @@
         return showPricesForClients;
       };
       
+      // RENDU PRINCIPAL - identique à la version précédente
       return (
         <div className="fixed inset-0 bg-slate-900 flex justify-center font-sans">
           {notification && <div className="fixed top-6 z-[100] bg-slate-800 text-slate-100 px-6 py-3 rounded-full text-xs font-bold shadow-2xl animate-fade-in-down border border-indigo-500/30">{notification}</div>}
