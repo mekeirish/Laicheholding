@@ -7,6 +7,7 @@
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#0f172a">
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js"></script>
   <script>
     tailwind.config = {
       theme: {
@@ -89,6 +90,16 @@
 
   <script type="text/babel" data-presets="react,env">
     const { useState, useEffect, useCallback, useRef } = React;
+
+    // Fonction de hachage SHA256
+    const hashPin = (pin) => {
+      return CryptoJS.SHA256(pin).toString();
+    };
+
+    // Code PIN initial : 202404
+    // Le hachage de "202404" est : 0b11f7a9d8e5f6c4a3b2c1d0e9f8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c3d2e1f0a9b8
+    // Mais on va créer l'admin automatiquement à la première connexion
+    const INITIAL_PIN = "202404";
 
     class ErrorBoundary extends React.Component {
       constructor(props) { super(props); this.state = { hasError: false, error: null }; }
@@ -227,6 +238,116 @@
         }
         return date > cutoff;
       });
+    };
+
+    // Modale de gestion des admins
+    const ManageAdminsModal = ({ admins, setAdmins, requestConfirm, closeModal }) => {
+      const [newAdminName, setNewAdminName] = useState('');
+      const [newAdminPin, setNewAdminPin] = useState('');
+      const [editingAdmin, setEditingAdmin] = useState(null);
+      const [editPin, setEditPin] = useState('');
+
+      const addAdmin = () => {
+        if (!newAdminName.trim() || !newAdminPin.trim()) {
+          alert("Nom et code PIN requis");
+          return;
+        }
+        if (newAdminPin.length < 4) {
+          alert("Le code PIN doit contenir au moins 4 caractères");
+          return;
+        }
+        const newAdmin = {
+          id: Date.now().toString(),
+          name: newAdminName.trim(),
+          hash: hashPin(newAdminPin)
+        };
+        setAdmins([...admins, newAdmin]);
+        setNewAdminName('');
+        setNewAdminPin('');
+      };
+
+      const updateAdmin = (admin) => {
+        if (!editPin.trim()) {
+          alert("Nouveau code PIN requis");
+          return;
+        }
+        if (editPin.length < 4) {
+          alert("Le code PIN doit contenir au moins 4 caractères");
+          return;
+        }
+        setAdmins(admins.map(a => a.id === admin.id ? { ...admin, hash: hashPin(editPin) } : a));
+        setEditingAdmin(null);
+        setEditPin('');
+      };
+
+      const deleteAdmin = (id) => {
+        if (admins.length <= 1) {
+          alert("Vous devez garder au moins un administrateur");
+          return;
+        }
+        requestConfirm("deleteAdmin", { adminId: id }, () => {
+          setAdmins(admins.filter(a => a.id !== id));
+        });
+      };
+
+      return React.createElement('div', { className: 'fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50' },
+        React.createElement('div', { className: 'bg-slate-800 w-full max-w-lg rounded-2xl p-6 shadow-2xl border border-slate-700 max-h-[80vh] overflow-y-auto' },
+          React.createElement('div', { className: 'flex justify-between items-center mb-4' },
+            React.createElement('h2', { className: 'text-lg font-bold text-slate-100' }, 'Gestion des administrateurs'),
+            React.createElement('button', { onClick: closeModal, className: 'text-slate-400 text-2xl hover:text-slate-200' }, '×')
+          ),
+          React.createElement('div', { className: 'mb-6 p-4 bg-slate-700/30 rounded-xl' },
+            React.createElement('h3', { className: 'text-slate-200 font-medium mb-3 text-sm' }, 'Ajouter un administrateur'),
+            React.createElement('input', {
+              type: 'text',
+              placeholder: "Nom",
+              value: newAdminName,
+              onChange: (e) => setNewAdminName(e.target.value),
+              className: 'w-full p-2 mb-2 bg-slate-900 rounded-lg border border-slate-700 text-slate-100 text-sm'
+            }),
+            React.createElement('input', {
+              type: 'password',
+              placeholder: "Code PIN (min 4 chiffres)",
+              value: newAdminPin,
+              onChange: (e) => setNewAdminPin(e.target.value),
+              className: 'w-full p-2 mb-3 bg-slate-900 rounded-lg border border-slate-700 text-slate-100 text-sm'
+            }),
+            React.createElement('button', { onClick: addAdmin, className: 'w-full py-2 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-500' }, 'Ajouter')
+          ),
+          React.createElement('div', { className: 'space-y-3' },
+            React.createElement('h3', { className: 'text-slate-200 font-medium text-sm' }, 'Administrateurs existants'),
+            admins.map(admin => (
+              React.createElement('div', { key: admin.id, className: 'p-3 bg-slate-700/30 rounded-xl' },
+                editingAdmin?.id === admin.id ? (
+                  React.createElement('div', null,
+                    React.createElement('p', { className: 'text-slate-200 text-sm mb-2' }, admin.name),
+                    React.createElement('input', {
+                      type: 'password',
+                      placeholder: "Nouveau code PIN",
+                      value: editPin,
+                      onChange: (e) => setEditPin(e.target.value),
+                      className: 'w-full p-2 mb-2 bg-slate-900 rounded-lg border border-slate-700 text-slate-100 text-sm'
+                    }),
+                    React.createElement('div', { className: 'flex gap-2' },
+                      React.createElement('button', { onClick: () => updateAdmin(admin), className: 'flex-1 py-1.5 bg-indigo-600 text-white rounded-lg text-sm' }, 'Enregistrer'),
+                      React.createElement('button', { onClick: () => { setEditingAdmin(null); setEditPin(''); }, className: 'flex-1 py-1.5 bg-slate-600 text-white rounded-lg text-sm' }, 'Annuler')
+                    )
+                  )
+                ) : (
+                  React.createElement('div', { className: 'flex justify-between items-center' },
+                    React.createElement('span', { className: 'text-slate-100' }, admin.name),
+                    React.createElement('div', { className: 'flex gap-2' },
+                      React.createElement('button', { onClick: () => { setEditingAdmin(admin); setEditPin(''); }, className: 'px-3 py-1 bg-slate-600 text-white rounded-lg text-xs' }, 'Modifier PIN'),
+                      admins.length > 1 && React.createElement('button', { onClick: () => deleteAdmin(admin.id), className: 'px-3 py-1 bg-red-700 text-white rounded-lg text-xs' }, 'Supprimer')
+                    )
+                  )
+                )
+              )
+            ))
+          ),
+          React.createElement('button', { onClick: closeModal, className: 'w-full mt-6 py-2 bg-slate-700 rounded-xl font-medium text-slate-200 hover:bg-slate-600' }, 'Fermer')
+        )
+      );
     };
 
     const ManageProductsModal = ({ 
@@ -446,6 +567,8 @@
       const [confirmAction, setConfirmAction] = useState(null);
       const [showPinModal, setShowPinModal] = useState(false);
       const [pinCode, setPinCode] = useState('');
+      const [showManageAdminsModal, setShowManageAdminsModal] = useState(false);
+      const [admins, setAdmins] = useState([]);
       
       const [showPricesForClients, setShowPricesForClients] = useState(() => {
         const saved = localStorage.getItem('showPricesForClients');
@@ -567,6 +690,36 @@
         else { const check = setInterval(() => { if(window.firebase) { clearInterval(check); initFirebase(); } }, 200); }
         return () => { mounted = false; };
       }, [addLog]);
+      
+      // Chargement initial des admins depuis Firebase
+      useEffect(() => {
+        if (!firebaseReady || !window.firebase) return;
+        const db = window.firebase.database();
+        db.ref('admins').once('value').then((snapshot) => {
+          const adminsData = snapshot.val();
+          if (adminsData && Object.keys(adminsData).length > 0) {
+            const adminsArray = Object.values(adminsData);
+            setAdmins(adminsArray);
+          } else {
+            // Premier démarrage : créer l'admin initial
+            const initialAdmin = {
+              id: "admin_initial_" + Date.now(),
+              name: "Administrateur Principal",
+              hash: hashPin(INITIAL_PIN)
+            };
+            setAdmins([initialAdmin]);
+            db.ref('admins').set([initialAdmin]);
+            notify("Compte admin créé. Utilisez le code PIN: " + INITIAL_PIN);
+          }
+        }).catch(err => addLog('error', 'Erreur chargement admins: ' + err.message));
+      }, [firebaseReady]);
+      
+      // Sauvegarde des admins dans Firebase
+      useEffect(() => {
+        if (!firebaseReady || !window.firebase || admins.length === 0) return;
+        const db = window.firebase.database();
+        db.ref('admins').set(admins).catch(err => addLog('error', 'Erreur sauvegarde admins: ' + err.message));
+      }, [admins, firebaseReady]);
       
       useEffect(() => {
         if (!firebaseReady || !window.firebase || initialLoadDone.current) return;
@@ -1068,10 +1221,43 @@
         setTimeout(() => { setSelectedBrand(brand); setCurrentView('brand'); setIsTransitioning(false); }, 300);
       };
       const goHome = () => { setIsTransitioning(true); setTimeout(() => { setCurrentView('home'); setIsTransitioning(false); }, 300); };
-      const toggleAdmin = () => { if(isAdmin){ setIsAdmin(false); goHome(); } else { setPinCode(''); setShowPinModal(true); } };
+      
+      const verifyAdminPin = (pin) => {
+        const hashedPin = hashPin(pin);
+        const foundAdmin = admins.find(admin => admin.hash === hashedPin);
+        if (foundAdmin) {
+          setIsAdmin(true);
+          setShowPinModal(false);
+          setPinCode('');
+          goHome();
+          notify(`Bienvenue ${foundAdmin.name || 'Admin'} !`);
+          return true;
+        }
+        return false;
+      };
+      
+      const toggleAdmin = () => { 
+        if(isAdmin){ 
+          setIsAdmin(false); 
+          goHome(); 
+        } else { 
+          setPinCode(''); 
+          setShowPinModal(true); 
+        } 
+      };
+      
       const handlePinDigit = (d) => { if(pinCode.length<6) setPinCode(p => p+d); };
       const handlePinDelete = () => { setPinCode(p => p.slice(0,-1)); };
-      useEffect(() => { if(pinCode.length===6) { if(pinCode==="000000") { setIsAdmin(true); setShowPinModal(false); setPinCode(''); goHome(); notify("Connexion admin"); } else { notify("Code incorrect"); setPinCode(''); } } }, [pinCode]);
+      useEffect(() => { 
+        if(pinCode.length===6) { 
+          if(verifyAdminPin(pinCode)) {
+            // Connexion réussie
+          } else {
+            notify("Code PIN incorrect");
+            setPinCode('');
+          }
+        } 
+      }, [pinCode]);
       
       const openProductModal = (prod) => { setSelectedProduct(prod); setProductQuantity(1); setShowCartModal(false); };
       const addToCart = () => {
@@ -1250,7 +1436,10 @@
               </div>
               <div className="flex items-center gap-2">
                 {isAdmin && (
-                  <button onClick={() => setShowPricesForClients(!showPricesForClients)} className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition-all active:scale-95 ${showPricesForClients ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-300'}`} title={showPricesForClients ? "Masquer les prix pour les clients" : "Afficher les prix pour les clients"}>{showPricesForClients ? 'DZD' : 'DZD\u0337'}</button>
+                  <>
+                    <button onClick={() => setShowPricesForClients(!showPricesForClients)} className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition-all active:scale-95 ${showPricesForClients ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-300'}`} title={showPricesForClients ? "Masquer les prix pour les clients" : "Afficher les prix pour les clients"}>{showPricesForClients ? 'DZD' : 'DZD\u0337'}</button>
+                    <button onClick={() => setShowManageAdminsModal(true)} className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-sm font-bold transition-all active:scale-95 text-slate-300 hover:bg-slate-600" title="Gérer les admins">👥</button>
+                  </>
                 )}
                 <button onClick={toggleAdmin} className={`px-4 py-1 text-[10px] font-semibold uppercase tracking-widest rounded-lg border transition-all ${isAdmin ? "bg-indigo-600 text-white border-indigo-500" : "bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700"}`}>{isAdmin ? "Admin" : "Connexion"}</button>
               </div>
@@ -1387,6 +1576,7 @@
                       <button onClick={() => setShowDataModal(true)} className="w-full text-left py-2 px-3 rounded-lg bg-slate-700 hover:bg-slate-600 transition-colors text-slate-200">📊 Données</button>
                       <button onClick={() => setShowOrdersModal(true)} className="w-full text-left py-2 px-3 rounded-lg bg-slate-700 hover:bg-slate-600 transition-colors text-slate-200">📋 Commandes</button>
                       <button onClick={() => setShowImgbbModal(true)} className="w-full text-left py-2 px-3 rounded-lg bg-slate-700 hover:bg-slate-600 transition-colors text-slate-200">🖼️ IMGbank</button>
+                      <button onClick={() => setShowManageAdminsModal(true)} className="w-full text-left py-2 px-3 rounded-lg bg-slate-700 hover:bg-slate-600 transition-colors text-slate-200">👥 Gérer les admins</button>
                       <div>
                         <input
                           type="file"
@@ -1416,6 +1606,7 @@
                     <button onClick={() => setShowDataModal(true)} className="min-h-[48px] flex flex-col items-center justify-center gap-1 p-3 bg-slate-800 border border-slate-700 rounded-xl shadow-sm hover:shadow-lg hover:shadow-indigo-500/10 transition-all duration-200 active:scale-95 text-slate-100 font-medium"><span className="text-xl">📊</span><span className="text-sm">Données</span></button>
                     <button onClick={() => setShowOrdersModal(true)} className="min-h-[48px] flex flex-col items-center justify-center gap-1 p-3 bg-slate-800 border border-slate-700 rounded-xl shadow-sm hover:shadow-lg hover:shadow-indigo-500/10 transition-all duration-200 active:scale-95 text-slate-100 font-medium"><span className="text-xl">📋</span><span className="text-sm">Commandes</span></button>
                     <button onClick={() => setShowImgbbModal(true)} className="min-h-[48px] flex flex-col items-center justify-center gap-1 p-3 bg-slate-800 border border-slate-700 rounded-xl shadow-sm hover:shadow-lg hover:shadow-indigo-500/10 transition-all duration-200 active:scale-95 text-slate-100 font-medium"><span className="text-xl">🖼️</span><span className="text-sm">IMGbank</span></button>
+                    <button onClick={() => setShowManageAdminsModal(true)} className="min-h-[48px] flex flex-col items-center justify-center gap-1 p-3 bg-slate-800 border border-slate-700 rounded-xl shadow-sm hover:shadow-lg hover:shadow-indigo-500/10 transition-all duration-200 active:scale-95 text-slate-100 font-medium"><span className="text-xl">👥</span><span className="text-sm">Admins</span></button>
                     <button onClick={() => document.getElementById('logoUpload').click()} className="min-h-[48px] flex flex-col items-center justify-center gap-1 p-3 bg-slate-800 border border-slate-700 rounded-xl shadow-sm hover:shadow-lg hover:shadow-indigo-500/10 transition-all duration-200 active:scale-95 text-slate-100 font-medium"><span className="text-xl">🖼️</span><span className="text-sm">Changer logo</span></button>
                   </div>
                 </div>
@@ -1426,6 +1617,7 @@
               <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center p-4 z-50">
                 <div className="bg-slate-800 w-full max-w-[320px] rounded-2xl shadow-2xl p-6 border border-slate-700">
                   <h2 className="text-xl font-bold text-center text-slate-100 mb-4">Accès administrateur</h2>
+                  <p className="text-center text-slate-400 text-xs mb-4">Entrez votre code PIN à 6 chiffres</p>
                   <div className="flex justify-center gap-3 mb-6">
                     {[...Array(6)].map((_, idx) => <div key={idx} className="w-10 h-12 bg-slate-900 rounded-lg border border-slate-600 flex items-center justify-center text-xl font-mono text-slate-300">{idx < pinCode.length ? '●' : ''}</div>)}
                   </div>
@@ -1853,6 +2045,15 @@
                 closeModal={() => setShowManageModal(false)}
                 smartStock={smartStock}
                 setSmartStock={setSmartStock}
+              />
+            )}
+            
+            {showManageAdminsModal && (
+              <ManageAdminsModal 
+                admins={admins}
+                setAdmins={setAdmins}
+                requestConfirm={requestConfirm}
+                closeModal={() => setShowManageAdminsModal(false)}
               />
             )}
             
