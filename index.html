@@ -19,6 +19,7 @@
     }
   </script>
   <style>
+    /* ... (tous les styles existants, inchangés) ... */
     @media (max-width: 1023px) {
       .mobile-bottom-nav {
         display: flex;
@@ -641,7 +642,7 @@
       );
     };
 
-    // WhatsAppManager mis à jour avec bouton site officiel et meilleurs messages
+    // WhatsAppManager mis à jour avec stockage dans settings/
     const WhatsAppManager = ({ waConfig, setWaConfig, waNumeros, setWaNumeros, requestConfirm, closeModal, testNotification, saveWhatsAppData }) => {
       const [newNom, setNewNom] = useState('');
       const [newNumero, setNewNumero] = useState('');
@@ -895,7 +896,7 @@
       const initialLoadDone = useRef(false);
       const [newOrderLed, setNewOrderLed] = useState(false);
       
-      // WhatsApp state
+      // WhatsApp state - stocké dans settings/whatsapp et settings/whatsapp_numeros
       const [waConfig, setWaConfig] = useState({ active: false, phone: "+34 644 52 74 88", apikey: "" });
       const [waNumeros, setWaNumeros] = useState([]);
       
@@ -950,20 +951,22 @@
         }
       };
       
-      // Fonction de sauvegarde explicite des données WhatsApp
+      // Fonction de sauvegarde explicite des données WhatsApp dans settings/
       const saveWhatsAppData = (config, numeros) => {
         if (!firebaseReady || !window.firebase) {
           notify("Firebase non prêt");
           return;
         }
         const db = window.firebase.database();
-        db.ref('whatsapp_config').set(config).then(() => {
-          db.ref('whatsapp_numeros').set(numeros).then(() => {
-            setWaConfig(config);
-            setWaNumeros(numeros);
-            notify("✅ Configuration WhatsApp sauvegardée");
-          }).catch(err => notify("Erreur sauvegarde numéros: " + err.message));
-        }).catch(err => notify("Erreur sauvegarde config: " + err.message));
+        // Stocker dans settings/whatsapp et settings/whatsapp_numeros
+        const updates = {};
+        updates['settings/whatsapp'] = config;
+        updates['settings/whatsapp_numeros'] = numeros;
+        db.ref().update(updates).then(() => {
+          setWaConfig(config);
+          setWaNumeros(numeros);
+          notify("✅ Configuration WhatsApp sauvegardée");
+        }).catch(err => notify("Erreur sauvegarde: " + err.message));
       };
       
       useEffect(() => {
@@ -1046,15 +1049,15 @@
           }
         }).catch(err => addLog('error', 'Erreur chargement admins: ' + err.message));
         
-        // Chargement initial de la configuration WhatsApp
-        db.ref('whatsapp_config').once('value').then((snapshot) => {
+        // Chargement de la configuration WhatsApp depuis settings/
+        db.ref('settings/whatsapp').once('value').then((snapshot) => {
           const data = snapshot.val();
           if (data) {
             setWaConfig(data);
           }
         }).catch(err => addLog('error', 'Erreur chargement wa config: ' + err.message));
         
-        db.ref('whatsapp_numeros').once('value').then((snapshot) => {
+        db.ref('settings/whatsapp_numeros').once('value').then((snapshot) => {
           const data = snapshot.val();
           if (data && Array.isArray(data)) {
             setWaNumeros(data);
