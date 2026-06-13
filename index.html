@@ -19,7 +19,6 @@
     }
   </script>
   <style>
-    /* Tous les styles existants - inchangés */
     @media (max-width: 1023px) {
       .mobile-bottom-nav {
         display: flex;
@@ -642,7 +641,7 @@
       );
     };
 
-    // Nouveau composant WhatsAppManager avec bouton de sauvegarde explicite
+    // WhatsAppManager mis à jour avec bouton site officiel et meilleurs messages
     const WhatsAppManager = ({ waConfig, setWaConfig, waNumeros, setWaNumeros, requestConfirm, closeModal, testNotification, saveWhatsAppData }) => {
       const [newNom, setNewNom] = useState('');
       const [newNumero, setNewNumero] = useState('');
@@ -651,7 +650,6 @@
       const [localConfig, setLocalConfig] = useState(waConfig);
       const [localNumeros, setLocalNumeros] = useState(waNumeros);
 
-      // Synchroniser les props avec l'état local quand la modale s'ouvre
       useEffect(() => {
         setLocalConfig(waConfig);
         setLocalNumeros(waNumeros);
@@ -693,23 +691,28 @@
       };
 
       const handleTestNotification = async () => {
-        if (!testPhone) {
-          alert("Entrez un numéro de test");
+        let cleanPhone = testPhone.replace(/\s/g, '').replace(/^\+/, '');
+        if (!cleanPhone) {
+          alert("Entrez un numéro de test (ex: 33612345678)");
           return;
         }
         setTestStatus("Envoi...");
-        const success = await testNotification(testPhone);
+        const success = await testNotification(cleanPhone);
         if (success) {
           setTestStatus("✅ Notification envoyée !");
         } else {
-          setTestStatus("❌ Échec. Vérifiez clé API et numéro bot.");
+          setTestStatus("❌ Échec. Vérifiez votre clé API et que vous avez bien envoyé le message d'autorisation au numéro du bot.");
         }
-        setTimeout(() => setTestStatus(''), 3000);
+        setTimeout(() => setTestStatus(''), 4000);
       };
 
       const copyToClipboard = (text, message) => {
         navigator.clipboard.writeText(text);
         alert(message);
+      };
+
+      const openCallMeBotSite = () => {
+        window.open('https://www.callmebot.com/blog/free-api-whatsapp-messages/', '_blank');
       };
 
       return React.createElement('div', { className: 'fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50' },
@@ -731,9 +734,10 @@
               )
             ),
             React.createElement('div', { className: 'flex gap-2 mb-3' },
-              React.createElement('button', { onClick: () => copyToClipboard('I allow callmebot to send me messages', 'Phrase copiée ! Envoyez-la au numéro WhatsApp du bot'), className: 'flex-1 py-2 bg-red-600 text-white rounded-lg text-sm' }, '📝 Copier autorisation')
+              React.createElement('button', { onClick: () => copyToClipboard('I allow callmebot to send me messages', 'Phrase copiée ! Envoyez-la au numéro WhatsApp du bot'), className: 'flex-1 py-2 bg-red-600 text-white rounded-lg text-sm' }, '📝 Copier autorisation'),
+              React.createElement('button', { onClick: openCallMeBotSite, className: 'flex-1 py-2 bg-blue-600 text-white rounded-lg text-sm' }, '🔗 Site officiel')
             ),
-            React.createElement('label', { className: 'text-[10px] uppercase font-bold text-slate-400 tracking-wider' }, 'NUMÉRO OFFICIEL DU BOT'),
+            React.createElement('label', { className: 'text-[10px] uppercase font-bold text-slate-400 tracking-wider' }, 'NUMÉRO OFFICIEL DU BOT (pour obtenir la clé API)'),
             React.createElement('input', {
               type: 'text',
               placeholder: "+34 644 52 74 88",
@@ -795,7 +799,9 @@
             )
           ),
           React.createElement('p', { className: 'text-[10px] text-slate-400 text-center mb-3' },
-            '📌 Pour activer CallMeBot : envoyez "I allow callmebot to send me messages" au numéro WhatsApp du bot ci-dessus, puis copiez la clé API reçue.'
+            '📌 1. Copiez la phrase d\'autorisation et envoyez-la au numéro WhatsApp du bot (indiqué ci-dessus).',
+            ' 2. Attendez la réponse avec votre clé API, puis collez-la dans le champ "Votre clé API".',
+            ' 3. Cliquez sur "Sauvegarder", puis testez avec "Envoyer test".'
           ),
           React.createElement('div', { className: 'flex gap-3' },
             React.createElement('button', { onClick: closeModal, className: 'flex-1 py-2 bg-slate-700 rounded-xl font-medium text-slate-200 hover:bg-slate-600' }, 'Annuler'),
@@ -1040,7 +1046,7 @@
           }
         }).catch(err => addLog('error', 'Erreur chargement admins: ' + err.message));
         
-        // Chargement initial de la configuration WhatsApp (une seule fois)
+        // Chargement initial de la configuration WhatsApp
         db.ref('whatsapp_config').once('value').then((snapshot) => {
           const data = snapshot.val();
           if (data) {
