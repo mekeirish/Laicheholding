@@ -447,7 +447,6 @@
       const [showPinModal, setShowPinModal] = useState(false);
       const [pinCode, setPinCode] = useState('');
       
-      // État pour l'affichage des prix pour les clients (paramètre global)
       const [showPricesForClients, setShowPricesForClients] = useState(() => {
         const saved = localStorage.getItem('showPricesForClients');
         return saved !== null ? saved === 'true' : true;
@@ -502,7 +501,6 @@
       const [firebaseReady, setFirebaseReady] = useState(false);
       const initialLoadDone = useRef(false);
       
-      // Sauvegarde locale des préférences
       useEffect(() => {
         localStorage.setItem('smartStock', smartStock);
       }, [smartStock]);
@@ -632,7 +630,6 @@
             .catch(err => addLog('error', 'Erreur suppression logo: ' + err.message));
         }
       }, [logoUrl, firebaseReady]);
-      // Sauvegarde du paramètre d'affichage des prix pour les clients
       useEffect(() => {
         if (!firebaseReady || !initialLoadDone.current) return;
         window.firebase.database().ref('settings/showPricesForClients').set(showPricesForClients)
@@ -741,12 +738,13 @@
         if (!firebaseReady) { notify("Firebase pas encore prêt"); return; }
         if (newBrand.name && newBrand.name.trim()) {
           let imageUrl = null;
-          if (newBrand.imageFile) {
+          // Vérifier que le fichier image est valide
+          if (newBrand.imageFile && newBrand.imageFile instanceof File) {
             try {
               imageUrl = await uploadToImgBB(newBrand.imageFile);
             } catch (err) {
               addLog('error', 'Upload image marque échoué: ' + err.message);
-              notify("Erreur lors de l'upload de l'image");
+              notify("Erreur lors de l'upload de l'image : " + err.message);
               return;
             }
           }
@@ -757,6 +755,7 @@
             products: []
           };
           setBrands([...brands, newBrandObj]);
+          // Réinitialiser le formulaire (y compris le champ fichier)
           setNewBrand({ name: "", imageFile: null });
           setShowModal(false);
           notify("Marque ajoutée");
@@ -769,12 +768,12 @@
         if (!firebaseReady) { notify("Firebase pas encore prêt"); return; }
         if (editingBrand.name && editingBrand.name.trim()) {
           let imageUrl = editingBrand.image;
-          if (editingBrand.imageFile) {
+          if (editingBrand.imageFile && editingBrand.imageFile instanceof File) {
             try {
               imageUrl = await uploadToImgBB(editingBrand.imageFile);
             } catch (err) {
               addLog('error', 'Upload image marque échoué: ' + err.message);
-              notify("Erreur lors de l'upload de l'image");
+              notify("Erreur lors de l'upload de l'image : " + err.message);
               return;
             }
           }
@@ -788,12 +787,12 @@
         if (!firebaseReady) { notify("Firebase pas encore prêt"); return; }
         if (newProduct.name && newProduct.name.trim() && newProduct.brandId) {
           let imageUrl = null;
-          if (newProduct.imageFile) {
+          if (newProduct.imageFile && newProduct.imageFile instanceof File) {
             try {
               imageUrl = await uploadToImgBB(newProduct.imageFile);
             } catch (err) {
               addLog('error', 'Upload image produit échoué: ' + err.message);
-              notify("Erreur lors de l'upload de l'image");
+              notify("Erreur lors de l'upload de l'image : " + err.message);
               return;
             }
           }
@@ -817,12 +816,12 @@
         if (!firebaseReady) { notify("Firebase pas encore prêt"); return; }
         if (editingProduct.name && editingProduct.name.trim()) {
           let imageUrl = editingProduct.image;
-          if (editingProduct.imageFile) {
+          if (editingProduct.imageFile && editingProduct.imageFile instanceof File) {
             try {
               imageUrl = await uploadToImgBB(editingProduct.imageFile);
             } catch (err) {
               addLog('error', 'Upload image produit échoué: ' + err.message);
-              notify("Erreur lors de l'upload de l'image");
+              notify("Erreur lors de l'upload de l'image : " + err.message);
               return;
             }
           }
@@ -1220,11 +1219,8 @@
       const safeBrands = Array.isArray(brands) ? brands : [];
       const safeSelectedBrand = selectedBrand && selectedBrand.products && Array.isArray(selectedBrand.products) ? selectedBrand : null;
       
-      // Fonction utilitaire pour déterminer si les prix doivent être affichés pour l'utilisateur courant
       const shouldShowPrices = () => {
-        // L'admin voit toujours les prix
         if (isAdmin) return true;
-        // Les clients voient selon le paramètre global
         return showPricesForClients;
       };
       
